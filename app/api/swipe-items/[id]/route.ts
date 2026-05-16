@@ -27,6 +27,7 @@ export async function PUT(
       headline = ${body.headline ?? null},
       ad_copy = ${body.ad_copy ?? null},
       image_url = ${body.image_url ?? null},
+      video_url = ${body.video_url ?? null},
       source_url = ${body.source_url ?? null},
       notes = ${body.notes ?? null},
       tags = ${body.tags ?? []}

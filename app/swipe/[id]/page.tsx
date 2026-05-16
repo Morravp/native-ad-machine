@@ -10,6 +10,7 @@ interface SwipeItem {
   headline: string | null
   ad_copy: string | null
   image_url: string | null
+  video_url: string | null
   source_url: string | null
   notes: string | null
   tags: string[]
@@ -125,20 +126,45 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                 onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
                 onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
               >
-                {/* Image */}
+                {/* Media */}
                 <div style={{
                   width: '100%',
                   aspectRatio: '1.6',
                   background: 'var(--bg3)',
                   overflow: 'hidden',
                   flexShrink: 0,
+                  position: 'relative',
                 }}>
-                  {item.image_url ? (
-                    <img
-                      src={item.image_url}
-                      alt=""
+                  {item.video_url && item.video_url !== 'video' ? (
+                    <video
+                      src={item.video_url}
+                      poster={item.image_url ?? undefined}
+                      controls
                       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                     />
+                  ) : item.image_url ? (
+                    <>
+                      <img
+                        src={item.image_url}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                      {item.video_url === 'video' && (
+                        <div style={{
+                          position: 'absolute', inset: 0,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: 'rgba(0,0,0,0.3)',
+                          pointerEvents: 'none',
+                        }}>
+                          <div style={{
+                            width: 40, height: 40, borderRadius: '50%',
+                            background: 'rgba(0,0,0,0.6)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 16, color: '#fff',
+                          }}>▶</div>
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <div style={{
                       width: '100%', height: '100%',
@@ -257,13 +283,20 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {modal.image_url && (
+              {modal.video_url && modal.video_url !== 'video' ? (
+                <video
+                  src={modal.video_url}
+                  poster={modal.image_url ?? undefined}
+                  controls
+                  style={{ width: '100%', borderRadius: 8, maxHeight: 320 }}
+                />
+              ) : modal.image_url ? (
                 <img
                   src={modal.image_url}
                   alt=""
                   style={{ width: '100%', borderRadius: 8, maxHeight: 280, objectFit: 'cover' }}
                 />
-              )}
+              ) : null}
 
               {modal.headline && (
                 <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text1)', lineHeight: 1.35 }}>

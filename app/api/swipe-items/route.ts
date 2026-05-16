@@ -36,13 +36,14 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const body = await req.json()
   const [row] = await sql`
-    INSERT INTO swipe_items (board_id, advertiser_name, headline, ad_copy, image_url, source_url, notes, tags)
+    INSERT INTO swipe_items (board_id, advertiser_name, headline, ad_copy, image_url, video_url, source_url, notes, tags)
     VALUES (
       ${body.board_id ?? null},
       ${body.advertiser_name ?? null},
       ${body.headline ?? null},
       ${body.ad_copy ?? null},
       ${body.image_url ?? null},
+      ${body.video_url ?? null},
       ${body.source_url ?? null},
       ${body.notes ?? null},
       ${body.tags ?? []}
