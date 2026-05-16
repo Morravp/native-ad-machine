@@ -11,6 +11,8 @@ interface SwipeItem {
   ad_copy: string | null
   image_url: string | null
   video_url: string | null
+  destination_url: string | null
+  cta_text: string | null
   source_url: string | null
   notes: string | null
   tags: string[]
@@ -226,15 +228,30 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                       {item.ad_copy}
                     </div>
                   )}
-                  {item.source_url && (
-                    <div style={{
-                      fontSize: 11, color: 'var(--text3)',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      marginTop: 2,
-                    }}>
-                      {(() => { try { return new URL(item.source_url).hostname } catch { return item.source_url } })()}
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                    {(item.destination_url || item.source_url) && (
+                      <div style={{
+                        fontSize: 11, color: 'var(--text3)',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        flex: 1,
+                      }}>
+                        {(() => {
+                          const url = item.destination_url || item.source_url
+                          try { return new URL(url!).hostname.replace('www.', '') }
+                          catch { return url }
+                        })()}
+                      </div>
+                    )}
+                    {item.cta_text && (
+                      <div style={{
+                        fontSize: 10, fontWeight: 600, color: 'var(--bg2)',
+                        background: 'var(--text3)', borderRadius: 4,
+                        padding: '2px 7px', whiteSpace: 'nowrap', flexShrink: 0,
+                      }}>
+                        {item.cta_text}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Footer buttons */}

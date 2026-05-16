@@ -46,17 +46,65 @@ const SKIP_PATTERNS = [
   /uitgevoerd/i,
   /started running/i,
   /quick save/i,
-  /meer inform/i,
-  /learn more/i,
-  /shop now/i,
-  /get quote/i,
-  /sign up/i,
-  /download/i,
-  /contact us/i,
-  /book now/i,
-  /apply now/i,
   /brandsearch/i,
+  // FB UI aria-labels and button tooltips
+  /vervolgkeuzemenu/i,
+  /meer opties/i,
+  /more options/i,
+  /menu openen/i,
+  /open menu/i,
+  /vind ik leuk/i,
+  /reageren/i,
+  /delen/i,
+  /opslaan/i,
+  /add to/i,
+  /spectre/i,
+  /overzichtsdetails/i,
+  /overview details/i,
+  /^actief$/i,
+  /^active$/i,
+  /^inactief$/i,
+  /^inactive$/i,
 ]
+
+// Known CTA button texts across languages
+const CTA_PATTERNS = [
+  /^meer inform/i,
+  /^learn more/i,
+  /^shop now/i,
+  /^nu winkelen/i,
+  /^shoppen/i,
+  /^koop nu/i,
+  /^buy now/i,
+  /^get quote/i,
+  /^offerte/i,
+  /^sign up/i,
+  /^aanmelden/i,
+  /^inschrijven/i,
+  /^download/i,
+  /^contact us/i,
+  /^neem contact/i,
+  /^book now/i,
+  /^nu boeken/i,
+  /^apply now/i,
+  /^solliciteer/i,
+  /^get offer/i,
+  /^aanbieding/i,
+  /^subscribe/i,
+  /^abonneren/i,
+  /^watch more/i,
+  /^bekijk meer/i,
+  /^send message/i,
+  /^bericht sturen/i,
+  /^order now/i,
+  /^nu bestellen/i,
+  /^get started/i,
+  /^aan de slag/i,
+]
+
+function isCTA(text) {
+  return CTA_PATTERNS.some(p => p.test(text.trim()))
+}
 
 function isAdContent(text) {
   if (!text || text.length < 15) return false
@@ -158,33 +206,67 @@ function extractAdData(card) {
     }
   })
 
-  // ── Ad copy: collect all text blocks, filter out UI labels ──
-  const seen = new Set()
-  const textCandidates = []
+  // ── Ad copy + headline: dump the full card text and parse it ──
+  // Reason: FB Ads Library splits metadata and ad preview into different DOM
+  // subtrees, so querySelector('[dir="auto"]') misses text in sibling sections.
+  // Grabbing the whole card's innerText and splitting into paragraphs is simpler
+  // and catches everything regardless of nesting.
 
-  card.querySelectorAll('div[dir="auto"], span[dir="auto"]').forEach(el => {
-    // Skip if it contains child block elements (would double-count)
-    const hasBlockChildren = [...el.children].some(c =>
-      ['DIV', 'P', 'SECTION', 'ARTICLE'].includes(c.tagName)
-    )
-    if (hasBlockChildren) return
+  const fullText = card.innerText || card.textContent || ''
+  const paragraphs = fullText
+    .split(/\n+/)
+    .map(s => s.trim())
+    .filter(s => s.length >= 15 && isAdContent(s))
 
-    const text = (el.innerText || el.textContent || '').trim()
-    if (!text || seen.has(text)) return
-    seen.add(text)
-    if (isAdContent(text)) textCandidates.push(text)
-  })
+  // Deduplicate: remove any paragraph that's a substring of a longer one
+  const unique = paragraphs.filter((t, _, arr) =>
+    !arr.some(other => other !== t && other.includes(t) && other.length > t.length)
+  )
 
-  // Sort longest first — primary copy is usually the longest
-  textCandidates.sort((a, b) => b.length - a.length)
+  // Sort longest-first: primary copy is almost always the longest block
+  unique.sort((a, b) => b.length - a.length)
 
-  if (textCandidates[0]) ad.ad_copy = textCandidates[0].slice(0, 3000)
+  if (unique[0]) ad.ad_copy = unique[0].slice(0, 3000)
 
-  // Headline is often the second-longest distinct block (shorter, punchier)
-  const headline = textCandidates.find(t =>
-    t !== ad.ad_copy && t.length < 120 && t.length > 5
+  // Headline: a shorter, distinct block (link preview title below the image)
+  const headline = unique.find(t =>
+    t !== ad.ad_copy && t.length >= 10 && t.length <= 150
   )
   if (headline) ad.headline = headline
+
+  // ── CTA button text ──
+  const buttons = [...card.querySelectorAll('a[role="button"], div[role="button"], button')]
+  const ctaBtn = buttons.find(b => isCTA(b.innerText || b.textContent || ''))
+  if (ctaBtn) ad.cta_text = (ctaBtn.innerText || ctaBtn.textContent || '').trim()
+
+  // ── Destination URL ──
+  // FB wraps outbound links as facebook.com/l.php?u=<encoded-url>
+  // Also look for plain domain text in the link preview area (e.g. "PETCURA.NL")
+  let destUrl = null
+
+  // Try FB redirect links first
+  card.querySelectorAll('a[href*="l.facebook.com"], a[href*="facebook.com/l.php"], a[href*="l.instagram.com"]').forEach(a => {
+    if (destUrl) return
+    try {
+      const params = new URL(a.href).searchParams
+      const u = params.get('u')
+      if (u) destUrl = decodeURIComponent(u)
+    } catch {}
+  })
+
+  // Fallback: look for a plain domain/URL in text nodes near the bottom of the card
+  // FB shows it as "BRAND.COM" or "www.brand.com" above the CTA button
+  if (!destUrl) {
+    const domainPattern = /^(https?:\/\/)?([a-z0-9-]+\.)+[a-z]{2,}(\/\S*)?$/i
+    const allText = (card.innerText || '').split('\n').map(s => s.trim())
+    const domainLine = allText.find(t =>
+      t.length > 3 && t.length < 80 && domainPattern.test(t) &&
+      !t.includes('facebook') && !t.includes('instagram')
+    )
+    if (domainLine) destUrl = domainLine.startsWith('http') ? domainLine : `https://${domainLine}`
+  }
+
+  if (destUrl) ad.destination_url = destUrl
 
   ad.source_url = window.location.href
   return ad
@@ -321,6 +403,8 @@ function showPanel(anchorBtn, adData) {
               ad_copy: adData.ad_copy || null,
               image_url: adData.image_url || null,
               video_url: adData.video_url || null,
+              destination_url: adData.destination_url || null,
+              cta_text: adData.cta_text || null,
               source_url: adData.source_url || null,
               notes: notes.value.trim() || null,
               tags: [],
@@ -329,14 +413,15 @@ function showPanel(anchorBtn, adData) {
           if (!res.ok) throw new Error()
           saveBtn.textContent = '✓ Saved!'
           saveBtn.style.background = '#4caf7d'
-          anchorBtn.textContent = '✓ Saved'
-          anchorBtn.style.background = '#4caf7d'
-          anchorBtn.style.color = '#fff'
+          // Update the bar text to show saved state
+          const strong = anchorBtn.querySelector('strong')
+          if (strong) strong.textContent = '✓ Saved'
+          const svg = anchorBtn.querySelector('svg:first-child')
+          if (svg) svg.style.stroke = '#4caf7d'
           setTimeout(() => {
             removePanel()
-            anchorBtn.textContent = '⊕ Save to Board'
-            anchorBtn.style.background = '#e8c547'
-            anchorBtn.style.color = '#0d0d0f'
+            if (strong) strong.textContent = 'Ad Machine'
+            if (svg) svg.style.stroke = '#606770'
           }, 1800)
         } catch {
           saveBtn.textContent = 'Error — check settings'
@@ -369,26 +454,46 @@ function injectButton(card) {
   if (card.getAttribute(MARKED_ATTR)) return
   card.setAttribute(MARKED_ATTR, '1')
 
-  const btn = document.createElement('button')
-  btn.className = BUTTON_CLASS
-  btn.textContent = '⊕ Save to Board'
-  btn.style.cssText = `
-    position:absolute; top:10px; right:10px;
-    background:#e8c547; color:#0d0d0f; border:none; border-radius:6px;
-    padding:5px 10px; font-size:11px; font-weight:700; cursor:pointer;
-    z-index:9999; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-    letter-spacing:0.03em; box-shadow:0 2px 6px rgba(0,0,0,0.4); white-space:nowrap;
+  // Bottom bar — same position and style as Brandsearch's "Quick save" bar
+  const bar = document.createElement('div')
+  bar.className = BUTTON_CLASS
+  bar.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 12px;
+    border-top: 1px solid rgba(0,0,0,0.12);
+    background: #f0f2f5;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    color: #606770;
+    user-select: none;
+    transition: background 0.15s;
+    box-sizing: border-box;
+    width: 100%;
   `
-  btn.onmouseenter = () => { if (btn.textContent === '⊕ Save to Board') btn.style.background = '#f0d05a' }
-  btn.onmouseleave = () => { if (btn.textContent === '⊕ Save to Board') btn.style.background = '#e8c547' }
-  btn.addEventListener('click', e => {
+
+  bar.innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#606770" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+    </svg>
+    <span style="flex:1;font-size:13px;">Quick save to <strong style="color:#e8a000;font-weight:700;">Ad Machine</strong></span>
+    <svg id="adm-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2.5" stroke-linecap="round" style="flex-shrink:0;transition:transform 0.2s;">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  `
+
+  bar.addEventListener('mouseenter', () => { bar.style.background = '#e4e6ea' })
+  bar.addEventListener('mouseleave', () => { bar.style.background = '#f0f2f5' })
+
+  bar.addEventListener('click', e => {
     e.preventDefault()
     e.stopPropagation()
-    showPanel(btn, extractAdData(card))
+    showPanel(bar, extractAdData(card))
   })
 
-  if (window.getComputedStyle(card).position === 'static') card.style.position = 'relative'
-  card.appendChild(btn)
+  card.appendChild(bar)
 }
 
 function findAndInjectCards() {

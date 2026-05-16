@@ -1,0 +1,2 @@
+ALTER TABLE swipe_items ADD COLUMN IF NOT EXISTS destination_url TEXT;
+ALTER TABLE swipe_items ADD COLUMN IF NOT EXISTS cta_text TEXT;
