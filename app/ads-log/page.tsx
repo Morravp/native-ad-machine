@@ -53,7 +53,7 @@ export default function AdsLogPage() {
             </div>
           ) : ads.map(ad => (
             <div key={ad.id} className="ads-table-row" onClick={() => setSelectedAd(ad)}>
-              <span><span className="ad-id">{ad.ad_id}</span></span>
+              <span style={{ overflow: 'hidden', minWidth: 0 }}><span className="ad-id" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '100%' }}>{ad.ad_id}</span></span>
               <span style={{ fontSize: 13 }}>{ad.brand_name ?? '—'}</span>
               <span style={{ fontSize: 12, color: 'var(--text2)' }}>{ad.country}</span>
               <span style={{ fontSize: 12, color: 'var(--text2)' }}>
