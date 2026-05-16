@@ -68,24 +68,40 @@ If a format reference is provided, mirror its structure and flow — write entir
 Start the ad directly. At the very top of the output, include the Ad ID: ${ad_id}
 End with a strong, clear call to action.`
 
-  const stream = await anthropic.messages.stream({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2000,
-    messages: [{ role: 'user', content: prompt }],
-  })
+  let stream
+  try {
+    stream = await anthropic.messages.stream({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2000,
+      messages: [{ role: 'user', content: prompt }],
+    })
+  } catch (err: any) {
+    console.error('Anthropic stream error:', err)
+    return Response.json(
+      { error: err?.message ?? 'Failed to start generation' },
+      { status: 500 }
+    )
+  }
 
   const encoder = new TextEncoder()
   const readable = new ReadableStream({
     async start(controller) {
-      for await (const event of stream) {
-        if (
-          event.type === 'content_block_delta' &&
-          event.delta.type === 'text_delta'
-        ) {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`)
-          )
+      try {
+        for await (const event of stream) {
+          if (
+            event.type === 'content_block_delta' &&
+            event.delta.type === 'text_delta'
+          ) {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ text: event.delta.text })}\n\n`)
+            )
+          }
         }
+      } catch (err: any) {
+        console.error('Anthropic stream read error:', err)
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ error: err?.message ?? 'Stream error' })}\n\n`)
+        )
       }
       controller.enqueue(encoder.encode('data: [DONE]\n\n'))
       controller.close()
