@@ -6,9 +6,10 @@ import { FormatExample } from '@/lib/types'
 type AdType = 'native_ad' | 'vsl'
 
 export default function FormatsPage() {
-  const [adType, setAdType] = useState<AdType>('native_ad')
+  const [viewType, setViewType] = useState<AdType>('native_ad')
   const [formats, setFormats] = useState<FormatExample[]>([])
   const [label, setLabel] = useState('')
+  const [uploadType, setUploadType] = useState<AdType>('native_ad')
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -21,7 +22,7 @@ export default function FormatsPage() {
     setLoading(false)
   }
 
-  useEffect(() => { loadFormats(adType) }, [adType])
+  useEffect(() => { loadFormats(viewType) }, [viewType])
 
   async function addExample() {
     if (!file) { alert('Please select a file first.'); return }
@@ -29,18 +30,19 @@ export default function FormatsPage() {
     const fd = new FormData()
     fd.append('label', label || file.name)
     fd.append('file', file)
-    fd.append('ad_type', adType)
+    fd.append('ad_type', uploadType)
     await fetch('/api/formats', { method: 'POST', body: fd })
     setLabel('')
     setFile(null)
     setSaving(false)
-    loadFormats(adType)
+    if (viewType === uploadType) loadFormats(viewType)
+    else setViewType(uploadType)
   }
 
   async function deleteFormat(id: string) {
     if (!confirm('Delete this format example?')) return
     await fetch(`/api/formats/${id}`, { method: 'DELETE' })
-    loadFormats(adType)
+    loadFormats(viewType)
   }
 
   return (
@@ -49,40 +51,38 @@ export default function FormatsPage() {
         <div className="topbar-title">Format Library</div>
       </div>
       <div className="content">
-        <div className="tabs">
-          <div
-            className={`tab${adType === 'native_ad' ? ' active' : ''}`}
-            onClick={() => setAdType('native_ad')}
-          >
-            Native Ad (copy)
-          </div>
-          <div
-            className={`tab${adType === 'vsl' ? ' active' : ''}`}
-            onClick={() => setAdType('vsl')}
-          >
-            VSL Script
-          </div>
-        </div>
-
         <div className="form-layout">
+
+          {/* LEFT — list with tabs */}
           <div>
             <div className="form-card">
               <div className="form-card-header">
-                <div className="form-card-title">
-                  {adType === 'native_ad' ? 'Native Ad Examples' : 'VSL Script Examples'}
-                </div>
+                <div className="form-card-title">Uploaded Examples</div>
                 <span style={{ fontSize: 12, color: 'var(--text3)' }}>{formats.length} examples</span>
+              </div>
+              <div style={{ display: 'flex', borderBottom: '1px solid var(--border)' }}>
+                <div
+                  className={`tab${viewType === 'native_ad' ? ' active' : ''}`}
+                  onClick={() => setViewType('native_ad')}
+                >
+                  Native Ad (copy)
+                </div>
+                <div
+                  className={`tab${viewType === 'vsl' ? ' active' : ''}`}
+                  onClick={() => setViewType('vsl')}
+                >
+                  VSL Script
+                </div>
               </div>
               <div className="form-card-body">
                 <div className="notice-box">
-                  ⚠ These are for <strong style={{ color: 'var(--text2)' }}>structure & format reference only</strong>.
-                  The AI will mirror the layout — it will NOT copy content, angles, or claims.
+                  ⚠ For <strong style={{ color: 'var(--text2)' }}>structure & format reference only</strong> — the AI mirrors the layout, not the content.
                 </div>
                 {loading ? (
                   <div style={{ textAlign: 'center', padding: 24, color: 'var(--text3)', fontSize: 13 }}>Loading…</div>
                 ) : !formats.length ? (
                   <div style={{ textAlign: 'center', padding: 24, color: 'var(--text3)', fontSize: 13 }}>
-                    No examples uploaded yet.
+                    No {viewType === 'native_ad' ? 'Native Ad' : 'VSL'} examples uploaded yet.
                   </div>
                 ) : (
                   <div className="uploaded-files">
@@ -104,12 +104,34 @@ export default function FormatsPage() {
             </div>
           </div>
 
+          {/* RIGHT — upload with explicit type selector */}
           <div>
             <div className="form-card">
               <div className="form-card-header">
                 <div className="form-card-title">Upload Example</div>
               </div>
               <div className="form-card-body">
+
+                <div>
+                  <label className="field-label">Upload for</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div
+                      className={`country-tag${uploadType === 'native_ad' ? ' selected' : ''}`}
+                      onClick={() => setUploadType('native_ad')}
+                      style={{ flex: 1, textAlign: 'center' }}
+                    >
+                      Native Ad (copy)
+                    </div>
+                    <div
+                      className={`country-tag${uploadType === 'vsl' ? ' selected' : ''}`}
+                      onClick={() => setUploadType('vsl')}
+                      style={{ flex: 1, textAlign: 'center' }}
+                    >
+                      VSL Script
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="field-label">Example label</label>
                   <input
@@ -117,12 +139,13 @@ export default function FormatsPage() {
                     value={label}
                     onChange={e => setLabel(e.target.value)}
                     placeholder={
-                      adType === 'native_ad'
+                      uploadType === 'native_ad'
                         ? 'e.g. Long-form health advertorial, 3-hook intro'
                         : 'e.g. 10-min VSL, problem-agitate-solve structure'
                     }
                   />
                 </div>
+
                 <div>
                   <label className="field-label">Upload file</label>
                   <div className="upload-zone" onClick={() => document.getElementById('format-file-input')?.click()}>
@@ -139,17 +162,19 @@ export default function FormatsPage() {
                     onChange={e => setFile(e.target.files?.[0] || null)}
                   />
                 </div>
+
                 <button
                   className="btn btn-accent"
                   style={{ width: '100%', justifyContent: 'center' }}
                   onClick={addExample}
                   disabled={saving}
                 >
-                  {saving ? '…' : '+ Add to Library'}
+                  {saving ? '…' : `+ Add to ${uploadType === 'native_ad' ? 'Native Ad' : 'VSL'} Library`}
                 </button>
               </div>
             </div>
           </div>
+
         </div>
       </div>
     </>
