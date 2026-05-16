@@ -1,6 +1,18 @@
 import sql from '@/lib/db'
 import { NextRequest } from 'next/server'
 
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  }
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: corsHeaders() })
+}
+
 export async function GET() {
   const rows = await sql`
     SELECT b.*, COUNT(i.id)::int AS item_count
@@ -9,7 +21,7 @@ export async function GET() {
     GROUP BY b.id
     ORDER BY b.created_at ASC
   `
-  return Response.json(rows)
+  return Response.json(rows, { headers: corsHeaders() })
 }
 
 export async function POST(req: NextRequest) {
@@ -19,5 +31,5 @@ export async function POST(req: NextRequest) {
     VALUES (${body.name}, ${body.description ?? null}, ${body.color ?? '0'})
     RETURNING *
   `
-  return Response.json(row)
+  return Response.json(row, { headers: corsHeaders() })
 }
