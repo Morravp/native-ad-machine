@@ -75,6 +75,13 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
     if (modal?.id === itemId) closeModal()
   }
 
+  function avatarColor(name: string | null) {
+    const colors = ['#e8c547','#5b8dee','#4caf7d','#e05c5c','#a374ea','#f0844c','#4cbfbf']
+    if (!name) return colors[0]
+    const i = name.charCodeAt(0) % colors.length
+    return colors[i]
+  }
+
   function timeAgo(dateStr: string) {
     const diff = Date.now() - new Date(dateStr).getTime()
     const days = Math.floor(diff / 86400000)
@@ -123,17 +130,47 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                 flexDirection: 'column',
                 transition: 'border-color 0.15s',
               }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(232,197,71,0.4)')}
                 onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
               >
+                {/* Header: avatar + advertiser + date (like GetHookAI) */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 9,
+                  padding: '10px 12px 8px',
+                }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                    background: avatarColor(item.advertiser_name),
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, fontWeight: 700, color: '#0d0d0f',
+                  }}>
+                    {item.advertiser_name?.[0]?.toUpperCase() ?? '?'}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 12, fontWeight: 600, color: 'var(--text1)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {item.advertiser_name ?? 'Unknown'}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>
+                      {timeAgo(item.created_at)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => openModal(item)}
+                    style={{
+                      background: 'none', border: 'none', color: 'var(--text3)',
+                      cursor: 'pointer', fontSize: 16, padding: '2px 4px', lineHeight: 1,
+                    }}
+                    title="Details"
+                  >⋯</button>
+                </div>
+
                 {/* Media */}
                 <div style={{
-                  width: '100%',
-                  aspectRatio: '1.6',
-                  background: 'var(--bg3)',
-                  overflow: 'hidden',
-                  flexShrink: 0,
-                  position: 'relative',
+                  width: '100%', aspectRatio: '1.6',
+                  background: 'var(--bg3)', overflow: 'hidden', flexShrink: 0, position: 'relative',
                 }}>
                   {item.video_url && item.video_url !== 'video' ? (
                     <video
@@ -153,12 +190,11 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                         <div style={{
                           position: 'absolute', inset: 0,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          background: 'rgba(0,0,0,0.3)',
-                          pointerEvents: 'none',
+                          background: 'rgba(0,0,0,0.3)', pointerEvents: 'none',
                         }}>
                           <div style={{
-                            width: 40, height: 40, borderRadius: '50%',
-                            background: 'rgba(0,0,0,0.6)',
+                            width: 44, height: 44, borderRadius: '50%',
+                            background: 'rgba(0,0,0,0.65)', border: '2px solid rgba(255,255,255,0.8)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             fontSize: 16, color: '#fff',
                           }}>▶</div>
@@ -170,75 +206,45 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                       width: '100%', height: '100%',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       color: 'var(--text3)', fontSize: 28,
-                    }}>
-                      ◻
-                    </div>
+                    }}>◻</div>
                   )}
                 </div>
 
-                {/* Card body */}
-                <div style={{ padding: '12px 14px', flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {/* Advertiser + date */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    {item.advertiser_name && (
-                      <div style={{
-                        fontSize: 11, fontWeight: 700, color: 'var(--accent)',
-                        textTransform: 'uppercase', letterSpacing: '0.05em',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {item.advertiser_name}
-                      </div>
-                    )}
-                    <div style={{ fontSize: 11, color: 'var(--text3)', flexShrink: 0 }}>
-                      {timeAgo(item.created_at)}
-                    </div>
-                  </div>
-
-                  {/* Headline */}
+                {/* Body: headline + copy + url */}
+                <div style={{ padding: '10px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {item.headline && (
-                    <div style={{
-                      fontSize: 13, fontWeight: 600, color: 'var(--text1)', lineHeight: 1.35,
-                    }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text1)', lineHeight: 1.35 }}>
                       {item.headline}
                     </div>
                   )}
-
-                  {/* Ad copy preview */}
                   {item.ad_copy && (
                     <div style={{
-                      fontSize: 12, color: 'var(--text3)', lineHeight: 1.5,
+                      fontSize: 12, color: 'var(--text2)', lineHeight: 1.55,
                       overflow: 'hidden', display: '-webkit-box',
-                      WebkitLineClamp: 3, WebkitBoxOrient: 'vertical',
-                      flex: 1,
+                      WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', flex: 1,
                     }}>
                       {item.ad_copy}
                     </div>
                   )}
-
-                  {/* Notes badge */}
-                  {item.notes && (
+                  {item.source_url && (
                     <div style={{
                       fontSize: 11, color: 'var(--text3)',
-                      background: 'var(--bg3)', borderRadius: 5,
-                      padding: '3px 7px', alignSelf: 'flex-start',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      marginTop: 2,
                     }}>
-                      📝 Note
+                      {(() => { try { return new URL(item.source_url).hostname } catch { return item.source_url } })()}
                     </div>
                   )}
                 </div>
 
                 {/* Footer buttons */}
-                <div style={{
-                  display: 'flex',
-                  borderTop: '1px solid var(--border)',
-                }}>
+                <div style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
                   <button
                     onClick={() => openModal(item)}
                     style={{
-                      flex: 1, padding: '10px', background: 'none', border: 'none',
+                      flex: 1, padding: '9px', background: 'none', border: 'none',
                       color: 'var(--text2)', fontSize: 12, fontWeight: 600,
-                      cursor: 'pointer', borderRight: '1px solid var(--border)',
-                      fontFamily: 'inherit',
+                      cursor: 'pointer', borderRight: '1px solid var(--border)', fontFamily: 'inherit',
                     }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg3)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'none')}
@@ -251,7 +257,7 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
-                        flex: 1, padding: '10px', background: 'none',
+                        flex: 1, padding: '9px', background: 'none',
                         color: 'var(--text2)', fontSize: 12, fontWeight: 600,
                         cursor: 'pointer', textDecoration: 'none',
                         textAlign: 'center', display: 'block',
