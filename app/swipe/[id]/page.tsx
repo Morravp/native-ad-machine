@@ -242,7 +242,23 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                         })()}
                       </div>
                     )}
-                    {item.cta_text && (
+                    {item.cta_text && item.destination_url && (
+                      <a
+                        href={item.destination_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={e => e.stopPropagation()}
+                        style={{
+                          fontSize: 10, fontWeight: 700, color: 'var(--bg2)',
+                          background: 'var(--accent)', borderRadius: 4,
+                          padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0,
+                          textDecoration: 'none', display: 'inline-block',
+                        }}
+                      >
+                        {item.cta_text} ↗
+                      </a>
+                    )}
+                    {item.cta_text && !item.destination_url && (
                       <div style={{
                         fontSize: 10, fontWeight: 600, color: 'var(--bg2)',
                         background: 'var(--text3)', borderRadius: 4,
@@ -337,16 +353,32 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                 </div>
               )}
 
-              {modal.source_url && (
-                <a
-                  href={modal.source_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ fontSize: 12, color: 'var(--accent)' }}
-                >
-                  View original ad ↗
-                </a>
-              )}
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                {modal.destination_url && modal.cta_text && (
+                  <a
+                    href={modal.destination_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      fontSize: 12, fontWeight: 700, color: 'var(--bg2)',
+                      background: 'var(--accent)', borderRadius: 6,
+                      padding: '6px 14px', textDecoration: 'none',
+                    }}
+                  >
+                    {modal.cta_text} ↗
+                  </a>
+                )}
+                {modal.source_url && (
+                  <a
+                    href={modal.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontSize: 12, color: 'var(--text3)' }}
+                  >
+                    View original ad ↗
+                  </a>
+                )}
+              </div>
 
               <div>
                 <label className="field-label">Notes</label>
