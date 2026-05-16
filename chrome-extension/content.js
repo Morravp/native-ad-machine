@@ -234,6 +234,17 @@ function extractAdData(card) {
   )
   if (headline) ad.headline = headline
 
+  // ── Active / Inactive status ──
+  // FB Ads Library shows a green "Actief" or gray "Inactief" badge on every card
+  ad.is_active = null
+  card.querySelectorAll('*').forEach(el => {
+    if (ad.is_active !== null) return
+    if ((el.children?.length ?? 0) > 0) return
+    const t = (el.innerText || el.textContent || '').trim()
+    if (/^(actief|active|aktiv|actif|activo)$/i.test(t)) ad.is_active = true
+    else if (/^(inactief|inactive|inaktiv|inactif|inactivo)$/i.test(t)) ad.is_active = false
+  })
+
   // ── CTA button text ──
   const buttons = [...card.querySelectorAll('a[role="button"], div[role="button"], button')]
   const ctaBtn = buttons.find(b => isCTA(b.innerText || b.textContent || ''))
@@ -405,6 +416,7 @@ function showPanel(anchorBtn, adData) {
               video_url: adData.video_url || null,
               destination_url: adData.destination_url || null,
               cta_text: adData.cta_text || null,
+              is_active: adData.is_active ?? null,
               source_url: adData.source_url || null,
               notes: notes.value.trim() || null,
               tags: [],

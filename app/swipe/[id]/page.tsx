@@ -13,6 +13,7 @@ interface SwipeItem {
   video_url: string | null
   destination_url: string | null
   cta_text: string | null
+  is_active: boolean | null
   source_url: string | null
   notes: string | null
   tags: string[]
@@ -26,6 +27,10 @@ interface Board {
   color: string
 }
 
+type MediaFilter = 'all' | 'image' | 'video'
+type ActiveFilter = 'all' | 'active' | 'inactive'
+type SortOrder = 'newest' | 'oldest'
+
 export default function BoardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const [board, setBoard] = useState<Board | null>(null)
@@ -34,6 +39,12 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
   const [modal, setModal] = useState<SwipeItem | null>(null)
   const [editNotes, setEditNotes] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // Filters
+  const [search, setSearch] = useState('')
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all')
+  const [activeFilter, setActiveFilter] = useState<ActiveFilter>('all')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
 
   async function load() {
     setLoading(true)
@@ -77,6 +88,25 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
     if (modal?.id === itemId) closeModal()
   }
 
+  const filtered = items
+    .filter(item => {
+      if (mediaFilter === 'video' && !item.video_url) return false
+      if (mediaFilter === 'image' && item.video_url) return false
+      if (activeFilter === 'active' && item.is_active !== true) return false
+      if (activeFilter === 'inactive' && item.is_active !== false) return false
+      if (search) {
+        const q = search.toLowerCase()
+        const hay = [item.advertiser_name, item.headline, item.ad_copy, item.cta_text]
+          .filter(Boolean).join(' ').toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+    .sort((a, b) => {
+      const diff = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      return sortOrder === 'newest' ? -diff : diff
+    })
+
   function avatarColor(name: string | null) {
     const colors = ['#e8c547','#5b8dee','#4caf7d','#e05c5c','#a374ea','#f0844c','#4cbfbf']
     if (!name) return colors[0]
@@ -109,6 +139,86 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
       </div>
 
       <div className="content">
+        {/* Filter bar */}
+        {!loading && items.length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            marginBottom: 20, padding: '12px 16px',
+            background: 'var(--bg2)', border: '1px solid var(--border)',
+            borderRadius: 10,
+          }}>
+            {/* Search */}
+            <div style={{ position: 'relative', flex: '1', minWidth: 160 }}>
+              <span style={{
+                position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                color: 'var(--text3)', fontSize: 13, pointerEvents: 'none',
+              }}>⌕</span>
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search ads…"
+                style={{ paddingLeft: 28, width: '100%' }}
+              />
+            </div>
+
+            {/* Media type pills */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(['all', 'image', 'video'] as MediaFilter[]).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setMediaFilter(f)}
+                  style={{
+                    padding: '5px 12px', borderRadius: 99, border: 'none',
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                    background: mediaFilter === f ? 'var(--accent)' : 'var(--bg3)',
+                    color: mediaFilter === f ? 'var(--bg)' : 'var(--text3)',
+                  }}
+                >
+                  {f === 'all' ? 'All' : f === 'image' ? '🖼 Images' : '▶ Videos'}
+                </button>
+              ))}
+            </div>
+
+            {/* Active status pills */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              {([
+                { value: 'all', label: 'All' },
+                { value: 'active', label: '🟢 Active' },
+                { value: 'inactive', label: '⚫ Inactive' },
+              ] as { value: ActiveFilter; label: string }[]).map(f => (
+                <button
+                  key={f.value}
+                  onClick={() => setActiveFilter(f.value)}
+                  style={{
+                    padding: '5px 12px', borderRadius: 99, border: 'none',
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                    background: activeFilter === f.value ? 'var(--accent)' : 'var(--bg3)',
+                    color: activeFilter === f.value ? 'var(--bg)' : 'var(--text3)',
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Sort */}
+            <select
+              value={sortOrder}
+              onChange={e => setSortOrder(e.target.value as SortOrder)}
+              style={{ minWidth: 110 }}
+            >
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+
+            {/* Result count */}
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+              {filtered.length} of {items.length}
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div style={{ textAlign: 'center', padding: 48, color: 'var(--text3)', fontSize: 13 }}>Loading…</div>
         ) : !items.length ? (
@@ -116,13 +226,17 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
             No ads saved to this board yet.<br />
             Use the Chrome extension on the Facebook Ads Library to save ads here.
           </div>
+        ) : !filtered.length ? (
+          <div style={{ textAlign: 'center', padding: 48, color: 'var(--text3)', fontSize: 13 }}>
+            No ads match your filters.
+          </div>
         ) : (
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
             gap: 16,
           }}>
-            {items.map(item => (
+            {filtered.map(item => (
               <div key={item.id} style={{
                 background: 'var(--bg2)',
                 border: '1px solid var(--border)',
@@ -149,11 +263,19 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                     {item.advertiser_name?.[0]?.toUpperCase() ?? '?'}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 12, fontWeight: 600, color: 'var(--text1)',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {item.advertiser_name ?? 'Unknown'}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{
+                        fontSize: 12, fontWeight: 600, color: 'var(--text1)',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {item.advertiser_name ?? 'Unknown'}
+                      </div>
+                      {item.is_active === true && (
+                        <span style={{ fontSize: 9, fontWeight: 700, color: '#4caf7d', background: 'rgba(76,175,125,0.12)', borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap', flexShrink: 0 }}>ACTIVE</span>
+                      )}
+                      {item.is_active === false && (
+                        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)', background: 'var(--bg3)', borderRadius: 4, padding: '1px 5px', whiteSpace: 'nowrap', flexShrink: 0 }}>INACTIVE</span>
+                      )}
                     </div>
                     <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>
                       {timeAgo(item.created_at)}
