@@ -30,7 +30,10 @@ export default function Sidebar() {
 
         <div className="nav-section-label">Generate</div>
         <Link href="/generator" className={navClass('/generator')}>
-          <span className="nav-icon">✦</span> Generate Ad
+          <span className="nav-icon">✦</span> Generate Native Ad (copy)
+        </Link>
+        <Link href="/vsl" className={navClass('/vsl')}>
+          <span className="nav-icon">▶</span> Generate VSL Script
         </Link>
 
         <div className="nav-section-label">Settings</div>

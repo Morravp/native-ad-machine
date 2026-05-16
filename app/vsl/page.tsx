@@ -12,10 +12,10 @@ function buildAdId(badge: number, country: string) {
   const d = String(now.getDate()).padStart(2, '0')
   const m = String(now.getMonth() + 1).padStart(2, '0')
   const y = now.getFullYear()
-  return `BADGE #${badge} - ${country} - ${d}/${m}/${y}`
+  return `VSL #${badge} - ${country} - ${d}/${m}/${y}`
 }
 
-function GeneratorInner() {
+function VSLInner() {
   const searchParams = useSearchParams()
   const defaultBrandId = searchParams.get('brand_id') || ''
 
@@ -25,7 +25,7 @@ function GeneratorInner() {
   const [brandDocs, setBrandDocs] = useState<BrandDoc[]>([])
   const [badge, setBadge] = useState(1)
   const [country, setCountry] = useState('NL/BE')
-  const [competitor, setCompetitor] = useState('')
+  const [formatRef, setFormatRef] = useState('')
   const [extraContext, setExtraContext] = useState('')
   const [extraFiles, setExtraFiles] = useState<File[]>([])
   const [generating, setGenerating] = useState(false)
@@ -37,7 +37,7 @@ function GeneratorInner() {
   useEffect(() => {
     Promise.all([
       fetch('/api/brands').then(r => r.json()),
-      fetch('/api/rules?ad_type=native_ad').then(r => r.json()),
+      fetch('/api/rules?ad_type=vsl').then(r => r.json()),
     ]).then(([b, r]) => {
       setBrands(Array.isArray(b) ? b : [])
       setRules(Array.isArray(r) ? r : [])
@@ -77,7 +77,7 @@ function GeneratorInner() {
       extraDocTexts = await extractExtraDocs()
     }
 
-    const res = await fetch('/api/generate', {
+    const res = await fetch('/api/generate-vsl', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -85,14 +85,14 @@ function GeneratorInner() {
         ad_id: adId,
         country,
         badge_number: badge,
-        competitor_ad: competitor || null,
+        format_ref: formatRef || null,
         extra_context: extraContext || null,
         extra_doc_texts: extraDocTexts,
       }),
     })
 
     if (!res.ok || !res.body) {
-      setOutput('Error generating ad. Please check your API key and try again.')
+      setOutput('Error generating script. Please check your API key and try again.')
       setGenerating(false)
       return
     }
@@ -113,9 +113,7 @@ function GeneratorInner() {
           const { text } = JSON.parse(payload)
           full += text
           setOutput(full)
-          if (outputRef.current) {
-            outputRef.current.scrollTop = outputRef.current.scrollHeight
-          }
+          if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight
         } catch {}
       }
     }
@@ -135,7 +133,7 @@ function GeneratorInner() {
         country,
         badge_number: badge,
         body: output,
-        competitor_ad: competitor || null,
+        competitor_ad: null,
         extra_context: extraContext || null,
       }),
     })
@@ -152,7 +150,7 @@ function GeneratorInner() {
   return (
     <>
       <div className="topbar">
-        <div className="topbar-title">Generate Native Ad</div>
+        <div className="topbar-title">Generate VSL Script</div>
       </div>
       <div className="content">
         <div className="form-layout">
@@ -160,7 +158,7 @@ function GeneratorInner() {
           <div className="form-left">
             <div className="form-card">
               <div className="form-card-header">
-                <div className="form-card-title">Ad Identity</div>
+                <div className="form-card-title">Script Identity</div>
               </div>
               <div className="form-card-body">
                 <div>
@@ -172,7 +170,7 @@ function GeneratorInner() {
                 </div>
                 <div className="input-row">
                   <div>
-                    <label className="field-label">Badge #</label>
+                    <label className="field-label">VSL #</label>
                     <input
                       type="number"
                       value={badge}
@@ -188,7 +186,7 @@ function GeneratorInner() {
                   </div>
                 </div>
                 <div className="ad-id-preview">
-                  <div className="ad-id-preview-label">Ad ID Preview</div>
+                  <div className="ad-id-preview-label">Script ID Preview</div>
                   <div className="ad-id-preview-value">{adId}</div>
                 </div>
               </div>
@@ -196,17 +194,17 @@ function GeneratorInner() {
 
             <div className="form-card">
               <div className="form-card-header">
-                <div className="form-card-title">Competitor Ad (format reference only)</div>
+                <div className="form-card-title">Format Reference (optional)</div>
               </div>
               <div className="form-card-body">
                 <div>
                   <span className="field-sublabel">
-                    Paste native ad copy from a competitor. The AI will learn the format — NOT the content or angle.
+                    Paste a VSL script example. The AI will mirror the structure — NOT copy the content or angle.
                   </span>
                   <textarea
-                    value={competitor}
-                    onChange={e => setCompetitor(e.target.value)}
-                    placeholder="Paste competitor ad copy here..."
+                    value={formatRef}
+                    onChange={e => setFormatRef(e.target.value)}
+                    placeholder="Paste a VSL script example here..."
                     style={{ minHeight: 140 }}
                   />
                 </div>
@@ -219,24 +217,24 @@ function GeneratorInner() {
               </div>
               <div className="form-card-body">
                 <div>
-                  <label className="field-label">Manual notes</label>
-                  <span className="field-sublabel">Specific angle, claim, hook, or anything extra for this particular ad.</span>
+                  <label className="field-label">Notes for this script</label>
+                  <span className="field-sublabel">Specific angle, hook, tone, or anything extra for this particular VSL.</span>
                   <textarea
                     value={extraContext}
                     onChange={e => setExtraContext(e.target.value)}
-                    placeholder="e.g. Focus on the sleep angle. Use the 'busy mom' hook..."
+                    placeholder="e.g. Target busy moms. Lead with the transformation story. 8-10 minute script..."
                     style={{ minHeight: 100 }}
                   />
                 </div>
                 <div>
-                  <label className="field-label">Upload extra docs for this ad</label>
-                  <div className="upload-zone" onClick={() => document.getElementById('gen-extra-file')?.click()}>
+                  <label className="field-label">Upload extra docs for this script</label>
+                  <div className="upload-zone" onClick={() => document.getElementById('vsl-extra-file')?.click()}>
                     <div className="upload-zone-icon">⬆</div>
                     <div className="upload-zone-text"><strong>Click to upload</strong> or drop files here</div>
-                    <div className="upload-zone-text" style={{ fontSize: 11, marginTop: 4 }}>PDF, DOCX, TXT</div>
+                    <div className="upload-zone-text" style={{ fontSize: 11, marginTop: 4 }}>PDF, TXT</div>
                   </div>
                   <input
-                    id="gen-extra-file"
+                    id="vsl-extra-file"
                     type="file"
                     multiple
                     style={{ display: 'none' }}
@@ -285,12 +283,12 @@ function GeneratorInner() {
 
             <div className="form-card">
               <div className="form-card-header">
-                <div className="form-card-title">Global Rules Active</div>
+                <div className="form-card-title">VSL Rules Active</div>
               </div>
               <div className="form-card-body" style={{ gap: 8, maxHeight: 280, overflowY: 'auto' }}>
                 {!rules.length ? (
                   <div style={{ textAlign: 'center', padding: 16, color: 'var(--text3)', fontSize: 13 }}>
-                    No global rules yet.{' '}
+                    No VSL rules yet.{' '}
                     <Link href="/rules" style={{ color: 'var(--accent)' }}>Add rules →</Link>
                   </div>
                 ) : rules.map((r, i) => (
@@ -308,7 +306,7 @@ function GeneratorInner() {
               onClick={generate}
               disabled={generating}
             >
-              {generating ? <><span className="spinner"></span> Generating…</> : '✦ Generate Ad'}
+              {generating ? <><span className="spinner"></span> Generating…</> : '▶ Generate VSL Script'}
             </button>
           </div>
         </div>
@@ -342,7 +340,7 @@ function GeneratorInner() {
             >
               {output ? output : (
                 <>
-                  <div className="output-empty-icon">✦</div>
+                  <div className="output-empty-icon">▶</div>
                   <div>Fill in the fields and hit generate</div>
                 </>
               )}
@@ -354,10 +352,10 @@ function GeneratorInner() {
   )
 }
 
-export default function GeneratorPage() {
+export default function VSLPage() {
   return (
     <Suspense fallback={null}>
-      <GeneratorInner />
+      <VSLInner />
     </Suspense>
   )
 }

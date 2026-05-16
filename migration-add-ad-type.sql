@@ -1,0 +1,2 @@
+ALTER TABLE global_rules ADD COLUMN IF NOT EXISTS ad_type TEXT NOT NULL DEFAULT 'native_ad';
+ALTER TABLE format_examples ADD COLUMN IF NOT EXISTS ad_type TEXT NOT NULL DEFAULT 'native_ad';
