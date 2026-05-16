@@ -7,7 +7,8 @@ export default function Sidebar() {
   const pathname = usePathname()
 
   function navClass(path: string) {
-    return 'nav-item' + (pathname === path ? ' active' : '')
+    const active = path === '/' ? pathname === '/' : pathname.startsWith(path)
+    return 'nav-item' + (active ? ' active' : '')
   }
 
   return (
@@ -34,6 +35,11 @@ export default function Sidebar() {
         </Link>
         <Link href="/vsl" className={navClass('/vsl')}>
           <span className="nav-icon">▶</span> Generate VSL Script
+        </Link>
+
+        <div className="nav-section-label">Swipe Files</div>
+        <Link href="/swipe" className={navClass('/swipe')}>
+          <span className="nav-icon">◈</span> Boards
         </Link>
 
         <div className="nav-section-label">Settings</div>

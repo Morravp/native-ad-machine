@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ad Machine Swipe</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      background: #0d0d0f;
+      color: #e8e8e8;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+    }
+
+    .header {
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #1e1e24;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .header-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #e8c547;
+    }
+    .header-sub {
+      font-size: 10px;
+      color: #555;
+      margin-top: 1px;
+    }
+    .settings-btn {
+      background: none;
+      border: none;
+      color: #555;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 2px;
+      line-height: 1;
+    }
+    .settings-btn:hover { color: #aaa; }
+
+    .section { padding: 12px 16px; }
+
+    label {
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #555;
+      margin-bottom: 5px;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      background: #15151a;
+      border: 1px solid #1e1e24;
+      border-radius: 6px;
+      color: #e8e8e8;
+      font-size: 12px;
+      padding: 7px 10px;
+      outline: none;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: #e8c547;
+    }
+    textarea { resize: vertical; min-height: 60px; }
+
+    .field { margin-bottom: 10px; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 7px;
+      border: 1px solid #1e1e24;
+      background: #15151a;
+      color: #aaa;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .btn:hover { border-color: #333; color: #e8e8e8; }
+    .btn-accent {
+      background: #e8c547;
+      color: #0d0d0f;
+      border-color: #e8c547;
+      font-weight: 700;
+    }
+    .btn-accent:hover { background: #f0d05a; }
+    .btn-accent:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-full { width: 100%; justify-content: center; }
+
+    .board-select { margin-bottom: 10px; }
+
+    .status {
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin: 10px 0 0;
+    }
+    .status.success { background: #1a2a1e; color: #4caf7d; border: 1px solid #2a4030; }
+    .status.error { background: #2a1515; color: #e05c5c; border: 1px solid #4a2020; }
+
+    .divider { border: none; border-top: 1px solid #1e1e24; margin: 0; }
+
+    /* Settings screen */
+    #settings-screen { display: none; }
+    #settings-screen.visible { display: block; }
+    #main-screen.hidden { display: none; }
+
+    .no-ad-notice {
+      padding: 24px 16px;
+      text-align: center;
+      color: #555;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .ad-preview {
+      background: #15151a;
+      border: 1px solid #1e1e24;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+    .ad-preview-name {
+      font-size: 10px;
+      font-weight: 700;
+      color: #e8c547;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .ad-preview-headline {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e8e8e8;
+      margin-top: 3px;
+      line-height: 1.35;
+    }
+    .ad-preview-copy {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+      line-height: 1.5;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Main screen -->
+<div id="main-screen">
+  <div class="header">
+    <div>
+      <div class="header-title">Ad Machine</div>
+      <div class="header-sub">Swipe to boards</div>
+    </div>
+    <button class="settings-btn" id="open-settings" title="Settings">⚙</button>
+  </div>
+
+  <div id="no-ad-view" class="no-ad-notice" style="display:none;">
+    Open the <strong style="color:#aaa">Facebook Ads Library</strong> and click the
+    <strong style="color:#e8c547">Save to Board</strong> button on an ad.
+  </div>
+
+  <div id="ad-form-view" style="display:none;">
+    <div class="section">
+      <div id="ad-preview" class="ad-preview"></div>
+
+      <div class="field board-select">
+        <label>Save to board</label>
+        <select id="board-select">
+          <option value="">Loading boards…</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Notes (optional)</label>
+        <textarea id="notes-input" placeholder="Hook style, offer angle, what stands out…"></textarea>
+      </div>
+
+      <button class="btn btn-accent btn-full" id="save-btn">Save to Board</button>
+      <div id="status-msg"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings screen -->
+<div id="settings-screen">
+  <div class="header">
+    <div>
+      <div class="header-title">Settings</div>
+    </div>
+    <button class="settings-btn" id="close-settings">✕</button>
+  </div>
+  <div class="section">
+    <div class="field">
+      <label>Your Ad Machine URL</label>
+      <input type="text" id="base-url-input" placeholder="https://your-app.railway.app" />
+    </div>
+    <button class="btn btn-accent btn-full" id="save-settings-btn">Save</button>
+    <div id="settings-status"></div>
+  </div>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

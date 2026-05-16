@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Ad Machine Swipe",
+  "version": "1.0",
+  "description": "Save ads from Facebook Ads Library to your Ad Machine swipe boards",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://www.facebook.com/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.facebook.com/ads/library/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

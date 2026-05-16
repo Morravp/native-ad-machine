@@ -1,0 +1,6 @@
+.adm-save-btn {
+  transition: background 0.15s, transform 0.1s;
+}
+.adm-save-btn:active {
+  transform: scale(0.96);
+}
