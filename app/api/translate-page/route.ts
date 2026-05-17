@@ -5,29 +5,71 @@ export const maxDuration = 300
 
 const client = new Anthropic()
 
-function stripBulk(html: string): { stripped: string; styles: string[]; scripts: string[] } {
-  const styles: string[] = []
-  const scripts: string[] = []
+type TextMap = Record<string, string>
 
-  let stripped = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (block) => {
-    styles.push(block)
-    return `<!--STYLE_${styles.length - 1}-->`
-  })
-  stripped = stripped.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, (block) => {
-    scripts.push(block)
-    return `<!--SCRIPT_${scripts.length - 1}-->`
-  })
-  // Strip HTML comments to reduce size
-  stripped = stripped.replace(/<!--(?!STYLE_|SCRIPT_)[\s\S]*?-->/g, '')
+// Extract all translatable text nodes + key attributes, replace with placeholders
+function extractTexts(html: string): { template: string; map: TextMap } {
+  const map: TextMap = {}
+  let i = 0
 
-  return { stripped, styles, scripts }
+  function key() { return `«T${i++}»` }
+
+  // Text nodes between tags (skip style/script content)
+  let inStyle = false
+  let inScript = false
+  let template = html
+    .replace(/<style[\s\S]*?<\/style>/gi, (m) => { return m }) // preserve but don't touch inside
+    .replace(/<script[\s\S]*?<\/script>/gi, (m) => { return m })
+
+  // Replace text content between tags
+  template = template.replace(/>([^<]+)</g, (match, text) => {
+    const trimmed = text.trim()
+    // Skip empty, pure whitespace, numbers-only, or single chars
+    if (!trimmed || trimmed.length < 2) return match
+    // Skip if it looks like data (numbers, symbols, template syntax)
+    if (/^[\d\s.,;:!?@#%&*()\-_=+[\]{}'"|\\/<>~`]+$/.test(trimmed)) return match
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) return match
+    const k = key()
+    map[k] = trimmed
+    return match.replace(text, text.replace(trimmed, k))
+  })
+
+  // alt attributes
+  template = template.replace(/\balt=["']([^"']{2,})["']/g, (match, text) => {
+    if (/^[\d\s\W]+$/.test(text)) return match
+    const k = key()
+    map[k] = text
+    return match.replace(text, k)
+  })
+
+  // placeholder attributes
+  template = template.replace(/\bplaceholder=["']([^"']{2,})["']/g, (match, text) => {
+    const k = key()
+    map[k] = text
+    return match.replace(text, k)
+  })
+
+  return { template, map }
 }
 
-function restoreBulk(html: string, styles: string[], scripts: string[]): string {
-  return html
-    .replace(/<!--STYLE_(\d+)-->/g, (_, i) => styles[parseInt(i)] || '')
-    .replace(/<!--SCRIPT_(\d+)-->/g, (_, i) => scripts[parseInt(i)] || '')
+function applyTranslations(template: string, translated: TextMap, original: TextMap): string {
+  let result = template
+  for (const [k, originalText] of Object.entries(original)) {
+    const translatedText = translated[k] ?? originalText
+    // Use split/join to replace ALL occurrences of the placeholder
+    result = result.split(k).join(translatedText)
+  }
+  return result
 }
+
+function parseJsonFromResponse(text: string): TextMap {
+  // Handle responses that may be wrapped in markdown code blocks
+  const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/)
+  const raw = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : text
+  return JSON.parse(raw.trim())
+}
+
+const BATCH_SIZE = 150
 
 export async function POST(req: Request) {
   const { id, language } = await req.json()
@@ -38,9 +80,9 @@ export async function POST(req: Request) {
   const [row] = await sql`SELECT html FROM cloned_pages WHERE id = ${id}`
   if (!row) return Response.json({ error: 'Page not found' }, { status: 404 })
 
-  const { stripped, styles, scripts } = stripBulk(row.html)
-  const estimatedTotal = stripped.length
-
+  const { template, map } = extractTexts(row.html)
+  const allKeys = Object.keys(map)
+  const totalBatches = Math.ceil(allKeys.length / BATCH_SIZE)
   const encoder = new TextEncoder()
 
   const body = new ReadableStream({
@@ -50,38 +92,54 @@ export async function POST(req: Request) {
       }
 
       try {
-        const anthropicStream = client.messages.stream({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 16000,
-          messages: [
-            {
-              role: 'user',
-              content: `Translate all visible user-facing text in this HTML to ${language}.
+        const translated: TextMap = {}
+        send({ type: 'progress', value: 0.05 })
+
+        for (let b = 0; b < totalBatches; b++) {
+          const batchKeys = allKeys.slice(b * BATCH_SIZE, (b + 1) * BATCH_SIZE)
+          const batchObj: TextMap = {}
+          for (const k of batchKeys) batchObj[k] = map[k]
+
+          const stream = client.messages.stream({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 8192,
+            messages: [
+              {
+                role: 'user',
+                content: `Translate the values in this JSON object to ${language}.
 
 Rules:
-- Translate ONLY visible text: content inside p, h1-h6, span, a, button, li, td, th, label, div text nodes, plus alt/placeholder/title attributes
-- Do NOT translate: class names, IDs, data-* attributes, CSS values, URLs, href/src values, HTML tag names
-- Keep brand names, product names, and proper nouns in their original language
-- Preserve all HTML structure and attributes exactly
-- Return ONLY the complete HTML, no markdown, no explanation
+- Translate ONLY the values, never the keys
+- Keep brand names, product names, and proper nouns in the original language
+- Preserve any HTML tags or special characters inside the values exactly
+- Return ONLY a valid JSON object — no markdown, no explanation
 
-HTML:
-${stripped}`,
-            },
-          ],
-        })
+JSON:
+${JSON.stringify(batchObj, null, 2)}`,
+              },
+            ],
+          })
 
-        let outputLength = 0
-        anthropicStream.on('text', (chunk) => {
-          outputLength += chunk.length
-          const progress = Math.min(0.93, outputLength / estimatedTotal)
-          send({ type: 'progress', value: progress })
-        })
+          stream.on('text', () => {
+            const batchProgress = (b + 0.5) / totalBatches
+            send({ type: 'progress', value: 0.05 + batchProgress * 0.88 })
+          })
 
-        const message = await anthropicStream.finalMessage()
-        const translatedStripped = message.content[0].type === 'text' ? message.content[0].text : stripped
-        const translatedHtml = restoreBulk(translatedStripped, styles, scripts)
+          const message = await stream.finalMessage()
+          const responseText = message.content[0].type === 'text' ? message.content[0].text : '{}'
 
+          try {
+            const batchTranslated = parseJsonFromResponse(responseText)
+            Object.assign(translated, batchTranslated)
+          } catch {
+            // If JSON parse fails for this batch, keep originals
+            Object.assign(translated, batchObj)
+          }
+
+          send({ type: 'progress', value: 0.05 + ((b + 1) / totalBatches) * 0.88 })
+        }
+
+        const translatedHtml = applyTranslations(template, translated, map)
         await sql`UPDATE cloned_pages SET html = ${translatedHtml} WHERE id = ${id}`
 
         send({ type: 'done', html: translatedHtml })
