@@ -99,6 +99,7 @@ export async function POST(req: Request) {
           const batchKeys = allKeys.slice(b * BATCH_SIZE, (b + 1) * BATCH_SIZE)
           const batchObj: TextMap = {}
           for (const k of batchKeys) batchObj[k] = map[k]
+          const batchInputSize = JSON.stringify(batchObj).length
 
           const stream = client.messages.stream({
             model: 'claude-sonnet-4-6',
@@ -120,19 +121,20 @@ ${JSON.stringify(batchObj, null, 2)}`,
             ],
           })
 
-          stream.on('text', () => {
-            const batchProgress = (b + 0.5) / totalBatches
-            send({ type: 'progress', value: 0.05 + batchProgress * 0.88 })
-          })
-
-          const message = await stream.finalMessage()
-          const responseText = message.content[0].type === 'text' ? message.content[0].text : '{}'
+          // Use for-await to get real-time chunks — reliable in async/streaming contexts
+          let accumulated = ''
+          for await (const chunk of stream) {
+            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+              accumulated += chunk.delta.text
+              const withinBatch = Math.min(0.95, accumulated.length / batchInputSize)
+              send({ type: 'progress', value: 0.05 + ((b + withinBatch) / totalBatches) * 0.88 })
+            }
+          }
 
           try {
-            const batchTranslated = parseJsonFromResponse(responseText)
+            const batchTranslated = parseJsonFromResponse(accumulated)
             Object.assign(translated, batchTranslated)
           } catch {
-            // If JSON parse fails for this batch, keep originals
             Object.assign(translated, batchObj)
           }
 
@@ -157,6 +159,7 @@ ${JSON.stringify(batchObj, null, 2)}`,
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',   // disable nginx buffering on Railway
     },
   })
 }
