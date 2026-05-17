@@ -258,7 +258,7 @@ export default function CloneEditor() {
 
   return (
     <>
-      <div className="topbar" style={{ position: 'relative', overflow: 'hidden' }}>
+      <div className="topbar" style={{ position: 'relative' }}>
         {translating && (
           <div
             className="translate-progress-bar"
