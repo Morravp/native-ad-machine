@@ -2,6 +2,7 @@
 
 import { useEffect, useState, use } from 'react'
 import Link from 'next/link'
+import ConfirmModal from '@/components/ConfirmModal'
 
 interface SwipeItem {
   id: string
@@ -40,6 +41,7 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
   const [modal, setModal] = useState<SwipeItem | null>(null)
   const [editNotes, setEditNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<SwipeItem | null>(null)
 
   // Filters
   const [search, setSearch] = useState('')
@@ -82,11 +84,12 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
     setSaving(false)
   }
 
-  async function deleteItem(itemId: string) {
-    if (!confirm('Remove this ad from the board?')) return
-    await fetch(`/api/swipe-items/${itemId}`, { method: 'DELETE' })
-    setItems(prev => prev.filter(i => i.id !== itemId))
-    if (modal?.id === itemId) closeModal()
+  async function confirmDeleteItem() {
+    if (!deleteTarget) return
+    await fetch(`/api/swipe-items/${deleteTarget.id}`, { method: 'DELETE' })
+    setItems(prev => prev.filter(i => i.id !== deleteTarget.id))
+    if (modal?.id === deleteTarget.id) closeModal()
+    setDeleteTarget(null)
   }
 
   const filtered = items
@@ -537,7 +540,7 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                 <button
                   className="btn"
                   style={{ color: 'var(--text3)' }}
-                  onClick={() => deleteItem(modal.id)}
+                  onClick={() => setDeleteTarget(modal)}
                 >
                   Delete
                 </button>
@@ -546,6 +549,15 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Remove this ad?"
+        message="This ad will be removed from the board."
+        confirmLabel="Remove"
+        onConfirm={confirmDeleteItem}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </>
   )
 }

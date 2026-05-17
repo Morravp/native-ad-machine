@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import ConfirmModal from '@/components/ConfirmModal'
 
 interface Board {
   id: string
@@ -32,6 +33,7 @@ export default function SwipePage() {
   const [desc, setDesc] = useState('')
   const [color, setColor] = useState('0')
   const [saving, setSaving] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Board | null>(null)
 
   async function load() {
     setLoading(true)
@@ -59,10 +61,10 @@ export default function SwipePage() {
     load()
   }
 
-  async function deleteBoard(id: string, e: React.MouseEvent) {
-    e.preventDefault()
-    if (!confirm('Delete this board and all its swipe items?')) return
-    await fetch(`/api/swipe-boards/${id}`, { method: 'DELETE' })
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    await fetch(`/api/swipe-boards/${deleteTarget.id}`, { method: 'DELETE' })
+    setDeleteTarget(null)
     load()
   }
 
@@ -152,7 +154,7 @@ export default function SwipePage() {
                   />
                   <button
                     className="file-chip-remove"
-                    onClick={e => deleteBoard(b.id, e)}
+                    onClick={e => { e.preventDefault(); setDeleteTarget(b) }}
                     style={{ marginLeft: 'auto' }}
                   >
                     ✕
@@ -172,6 +174,15 @@ export default function SwipePage() {
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete this board?"
+        message={deleteTarget ? `"${deleteTarget.name}" and all its saved ads will be permanently removed.` : undefined}
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </>
   )
 }

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import BrandModal from '@/components/BrandModal'
 import AdDetailModal from '@/components/AdDetailModal'
+import ConfirmModal from '@/components/ConfirmModal'
 import { Brand, BrandDoc, Ad } from '@/lib/types'
 
 export default function BrandDetailPage() {
@@ -18,6 +19,7 @@ export default function BrandDetailPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [selectedAd, setSelectedAd] = useState<Ad | null>(null)
   const [loading, setLoading] = useState(true)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   async function load() {
     const [brandRes, adsRes] = await Promise.all([
@@ -36,7 +38,6 @@ export default function BrandDetailPage() {
   useEffect(() => { load() }, [id])
 
   async function deleteBrand() {
-    if (!confirm('Delete this brand?')) return
     await fetch(`/api/brands/${id}`, { method: 'DELETE' })
     router.push('/brands')
   }
@@ -166,7 +167,7 @@ export default function BrandDetailPage() {
               </div>
             </div>
 
-            <button className="btn btn-sm btn-danger" style={{ width: '100%', justifyContent: 'center' }} onClick={deleteBrand}>
+            <button className="btn btn-sm btn-danger" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setConfirmDelete(true)}>
               Delete Brand
             </button>
           </div>
@@ -189,6 +190,15 @@ export default function BrandDetailPage() {
           onClose={() => setSelectedAd(null)}
         />
       )}
+
+      <ConfirmModal
+        open={confirmDelete}
+        title={`Delete "${brand.name}"?`}
+        message="This brand and all its ads and documents will be permanently removed."
+        confirmLabel="Delete"
+        onConfirm={deleteBrand}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </>
   )
 }

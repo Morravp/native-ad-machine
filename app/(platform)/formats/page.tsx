@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import ConfirmModal from '@/components/ConfirmModal'
 import { FormatExample } from '@/lib/types'
 
 type AdType = 'native_ad' | 'vsl'
@@ -13,6 +14,7 @@ export default function FormatsPage() {
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<FormatExample | null>(null)
 
   async function loadFormats(type: AdType) {
     setLoading(true)
@@ -39,9 +41,10 @@ export default function FormatsPage() {
     else setViewType(uploadType)
   }
 
-  async function deleteFormat(id: string) {
-    if (!confirm('Delete this format example?')) return
-    await fetch(`/api/formats/${id}`, { method: 'DELETE' })
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    await fetch(`/api/formats/${deleteTarget.id}`, { method: 'DELETE' })
+    setDeleteTarget(null)
     loadFormats(viewType)
   }
 
@@ -95,7 +98,7 @@ export default function FormatsPage() {
                             <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>{f.label}</div>
                           )}
                         </div>
-                        <button className="file-chip-remove" onClick={() => deleteFormat(f.id)}>✕</button>
+                        <button className="file-chip-remove" onClick={() => setDeleteTarget(f)}>✕</button>
                       </div>
                     ))}
                   </div>
@@ -177,6 +180,15 @@ export default function FormatsPage() {
 
         </div>
       </div>
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete this format example?"
+        message={deleteTarget ? `"${deleteTarget.label || deleteTarget.file_name}" will be permanently removed from the library.` : undefined}
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </>
   )
 }

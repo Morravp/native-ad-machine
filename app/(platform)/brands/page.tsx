@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import BrandModal from '@/components/BrandModal'
+import ConfirmModal from '@/components/ConfirmModal'
 import { Brand, BrandDoc } from '@/lib/types'
 
 export default function BrandsPage() {
@@ -11,6 +12,7 @@ export default function BrandsPage() {
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null)
   const [editingDocs, setEditingDocs] = useState<BrandDoc[]>([])
   const [loading, setLoading] = useState(true)
+  const [deleteTarget, setDeleteTarget] = useState<Brand | null>(null)
 
   async function loadBrands() {
     const res = await fetch('/api/brands')
@@ -35,9 +37,10 @@ export default function BrandsPage() {
     setModalOpen(true)
   }
 
-  async function deleteBrand(id: string) {
-    if (!confirm('Delete this brand and all its data?')) return
-    await fetch(`/api/brands/${id}`, { method: 'DELETE' })
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    await fetch(`/api/brands/${deleteTarget.id}`, { method: 'DELETE' })
+    setDeleteTarget(null)
     loadBrands()
   }
 
@@ -69,7 +72,7 @@ export default function BrandsPage() {
                     >✎</button>
                     <button
                       className="btn btn-sm btn-icon btn-danger"
-                      onClick={e => { e.stopPropagation(); deleteBrand(brand.id) }}
+                      onClick={e => { e.stopPropagation(); setDeleteTarget(brand) }}
                       title="Delete"
                     >✕</button>
                   </div>
@@ -100,6 +103,15 @@ export default function BrandsPage() {
           onSaved={() => { setModalOpen(false); loadBrands() }}
         />
       )}
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete this brand?"
+        message={deleteTarget ? `"${deleteTarget.name}" and all its ads and documents will be permanently removed.` : undefined}
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </>
   )
 }
