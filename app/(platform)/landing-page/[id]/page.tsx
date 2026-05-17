@@ -85,6 +85,7 @@ export default function CloneEditor() {
   const [editMode, setEditMode] = useState(false)
   const [viewport, setViewport] = useState<Viewport>('desktop')
   const [translating, setTranslating] = useState(false)
+  const [translateProgress, setTranslateProgress] = useState(0)
   const [showLangMenu, setShowLangMenu] = useState(false)
   const langMenuRef = useRef<HTMLDivElement>(null)
 
@@ -189,6 +190,7 @@ export default function CloneEditor() {
   async function translate(langCode: string, langLabel: string) {
     setShowLangMenu(false)
     setTranslating(true)
+    setTranslateProgress(0)
     setSelected(null)
     try {
       const res = await fetch('/api/translate-page', {
@@ -196,13 +198,39 @@ export default function CloneEditor() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, language: langLabel }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Translation failed')
-      setHtml(data.html)
+      if (!res.ok || !res.body) {
+        const data = await res.json()
+        throw new Error(data.error || 'Translation failed')
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split('\n\n')
+        buffer = parts.pop() ?? ''
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue
+          const event = JSON.parse(part.slice(6))
+          if (event.type === 'progress') {
+            setTranslateProgress(event.value)
+          } else if (event.type === 'done') {
+            setTranslateProgress(1)
+            setHtml(event.html)
+          } else if (event.type === 'error') {
+            throw new Error(event.error)
+          }
+        }
+      }
     } catch (err: any) {
       alert(err.message)
     } finally {
-      setTranslating(false)
+      // brief pause so the bar visually completes before disappearing
+      setTimeout(() => { setTranslating(false); setTranslateProgress(0) }, 600)
     }
   }
 
@@ -230,7 +258,13 @@ export default function CloneEditor() {
 
   return (
     <>
-      <div className="topbar">
+      <div className="topbar" style={{ position: 'relative', overflow: 'hidden' }}>
+        {translating && (
+          <div
+            className="translate-progress-bar"
+            style={{ width: `${Math.round(translateProgress * 100)}%` }}
+          />
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Link href="/landing-page" className="btn btn-sm">← Back</Link>
           <div className="topbar-title" style={{ fontSize: 15 }}>{clone.title || 'Untitled Page'}</div>
@@ -270,7 +304,9 @@ export default function CloneEditor() {
               onClick={() => setShowLangMenu(p => !p)}
               disabled={translating}
             >
-              {translating ? <><span className="spinner" /> Translating…</> : '🌐 Translate'}
+              {translating
+              ? `Translating… ${Math.round(translateProgress * 100)}%`
+              : '🌐 Translate'}
             </button>
             {showLangMenu && (
               <div className="lang-menu">

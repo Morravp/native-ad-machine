@@ -1,4 +1,3 @@
-import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import sql from '@/lib/db'
 
@@ -31,25 +30,33 @@ function restoreBulk(html: string, styles: string[], scripts: string[]): string 
 }
 
 export async function POST(req: Request) {
-  try {
-    const { id, language } = await req.json()
-    if (!id || !language) {
-      return NextResponse.json({ error: 'id and language are required' }, { status: 400 })
-    }
+  const { id, language } = await req.json()
+  if (!id || !language) {
+    return Response.json({ error: 'id and language are required' }, { status: 400 })
+  }
 
-    const [row] = await sql`SELECT html FROM cloned_pages WHERE id = ${id}`
-    if (!row) return NextResponse.json({ error: 'Page not found' }, { status: 404 })
+  const [row] = await sql`SELECT html FROM cloned_pages WHERE id = ${id}`
+  if (!row) return Response.json({ error: 'Page not found' }, { status: 404 })
 
-    const { stripped, styles, scripts } = stripBulk(row.html)
+  const { stripped, styles, scripts } = stripBulk(row.html)
+  const estimatedTotal = stripped.length
 
-    // Use streaming to avoid SDK timeout error on large pages
-    const stream = client.messages.stream({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
-      messages: [
-        {
-          role: 'user',
-          content: `Translate all visible user-facing text in this HTML to ${language}.
+  const encoder = new TextEncoder()
+
+  const body = new ReadableStream({
+    async start(controller) {
+      function send(obj: object) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`))
+      }
+
+      try {
+        const anthropicStream = client.messages.stream({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 16000,
+          messages: [
+            {
+              role: 'user',
+              content: `Translate all visible user-facing text in this HTML to ${language}.
 
 Rules:
 - Translate ONLY visible text: content inside p, h1-h6, span, a, button, li, td, th, label, div text nodes, plus alt/placeholder/title attributes
@@ -60,19 +67,38 @@ Rules:
 
 HTML:
 ${stripped}`,
-        },
-      ],
-    })
+            },
+          ],
+        })
 
-    const message = await stream.finalMessage()
-    const translatedStripped = message.content[0].type === 'text' ? message.content[0].text : stripped
-    const translatedHtml = restoreBulk(translatedStripped, styles, scripts)
+        let outputLength = 0
+        anthropicStream.on('text', (chunk) => {
+          outputLength += chunk.length
+          const progress = Math.min(0.93, outputLength / estimatedTotal)
+          send({ type: 'progress', value: progress })
+        })
 
-    await sql`UPDATE cloned_pages SET html = ${translatedHtml} WHERE id = ${id}`
+        const message = await anthropicStream.finalMessage()
+        const translatedStripped = message.content[0].type === 'text' ? message.content[0].text : stripped
+        const translatedHtml = restoreBulk(translatedStripped, styles, scripts)
 
-    return NextResponse.json({ html: translatedHtml })
-  } catch (err: any) {
-    console.error('translate-page error:', err)
-    return NextResponse.json({ error: err.message || 'Translation failed' }, { status: 500 })
-  }
+        await sql`UPDATE cloned_pages SET html = ${translatedHtml} WHERE id = ${id}`
+
+        send({ type: 'done', html: translatedHtml })
+      } catch (err: any) {
+        console.error('translate-page error:', err)
+        send({ type: 'error', error: err.message || 'Translation failed' })
+      } finally {
+        controller.close()
+      }
+    },
+  })
+
+  return new Response(body, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  })
 }
