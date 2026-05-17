@@ -2,19 +2,32 @@ import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import sql from '@/lib/db'
 
+export const maxDuration = 300
+
 const client = new Anthropic()
 
-function stripStyles(html: string): { stripped: string; styles: string[] } {
+function stripBulk(html: string): { stripped: string; styles: string[]; scripts: string[] } {
   const styles: string[] = []
-  const stripped = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (block, css) => {
+  const scripts: string[] = []
+
+  let stripped = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (block) => {
     styles.push(block)
-    return `<!--STYLE_PLACEHOLDER_${styles.length - 1}-->`
+    return `<!--STYLE_${styles.length - 1}-->`
   })
-  return { stripped, styles }
+  stripped = stripped.replace(/<script[^>]*>([\s\S]*?)<\/script>/gi, (block) => {
+    scripts.push(block)
+    return `<!--SCRIPT_${scripts.length - 1}-->`
+  })
+  // Strip HTML comments to reduce size
+  stripped = stripped.replace(/<!--(?!STYLE_|SCRIPT_)[\s\S]*?-->/g, '')
+
+  return { stripped, styles, scripts }
 }
 
-function restoreStyles(html: string, styles: string[]): string {
-  return html.replace(/<!--STYLE_PLACEHOLDER_(\d+)-->/g, (_, i) => styles[parseInt(i)] || '')
+function restoreBulk(html: string, styles: string[], scripts: string[]): string {
+  return html
+    .replace(/<!--STYLE_(\d+)-->/g, (_, i) => styles[parseInt(i)] || '')
+    .replace(/<!--SCRIPT_(\d+)-->/g, (_, i) => scripts[parseInt(i)] || '')
 }
 
 export async function POST(req: Request) {
@@ -27,31 +40,33 @@ export async function POST(req: Request) {
     const [row] = await sql`SELECT html FROM cloned_pages WHERE id = ${id}`
     if (!row) return NextResponse.json({ error: 'Page not found' }, { status: 404 })
 
-    const { stripped, styles } = stripStyles(row.html)
+    const { stripped, styles, scripts } = stripBulk(row.html)
 
-    const message = await client.messages.create({
+    // Use streaming to avoid SDK timeout error on large pages
+    const stream = client.messages.stream({
       model: 'claude-sonnet-4-6',
-      max_tokens: 32000,
+      max_tokens: 16000,
       messages: [
         {
           role: 'user',
-          content: `Translate all visible text content in this HTML page to ${language}.
+          content: `Translate all visible user-facing text in this HTML to ${language}.
 
 Rules:
-- Translate ONLY text that appears visible to the user (inside tags like p, h1-h6, span, a, button, li, td, th, label, div text nodes, alt attributes, placeholder attributes, title attributes)
-- Do NOT translate: class names, IDs, data attributes, CSS values, URLs, href values, src values, HTML tag names, or JavaScript
-- Do NOT translate brand names, product names, or proper nouns that should stay in the original language
-- Preserve all HTML structure, attributes, and formatting exactly — only the text content changes
-- Return ONLY the complete translated HTML, no explanations, no markdown code blocks
+- Translate ONLY visible text: content inside p, h1-h6, span, a, button, li, td, th, label, div text nodes, plus alt/placeholder/title attributes
+- Do NOT translate: class names, IDs, data-* attributes, CSS values, URLs, href/src values, HTML tag names
+- Keep brand names, product names, and proper nouns in their original language
+- Preserve all HTML structure and attributes exactly
+- Return ONLY the complete HTML, no markdown, no explanation
 
-HTML to translate:
+HTML:
 ${stripped}`,
         },
       ],
     })
 
+    const message = await stream.finalMessage()
     const translatedStripped = message.content[0].type === 'text' ? message.content[0].text : stripped
-    const translatedHtml = restoreStyles(translatedStripped, styles)
+    const translatedHtml = restoreBulk(translatedStripped, styles, scripts)
 
     await sql`UPDATE cloned_pages SET html = ${translatedHtml} WHERE id = ${id}`
 
