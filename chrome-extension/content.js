@@ -65,6 +65,8 @@ const SKIP_PATTERNS = [
   /^active$/i,
   /^inactief$/i,
   /^inactive$/i,
+  /^niet-actief$/i,
+  /^not active$/i,
 ]
 
 // Known CTA button texts across languages
@@ -235,15 +237,26 @@ function extractAdData(card) {
   if (headline) ad.headline = headline
 
   // ── Active / Inactive status ──
-  // FB Ads Library shows a green "Actief" or gray "Inactief" badge on every card
+  // The "Actief/Inactief" badge lives in a SIBLING section above our detected card
+  // element. Check direct siblings of the card first (short text = badge section),
+  // then fall back to the card itself.
   ad.is_active = null
-  card.querySelectorAll('*').forEach(el => {
-    if (ad.is_active !== null) return
-    if ((el.children?.length ?? 0) > 0) return
-    const t = (el.innerText || el.textContent || '').trim()
-    if (/^(actief|active|aktiv|actif|activo)$/i.test(t)) ad.is_active = true
-    else if (/^(inactief|inactive|inaktiv|inactif|inactivo)$/i.test(t)) ad.is_active = false
-  })
+  const statusParent = card.parentElement
+  if (statusParent) {
+    for (const sibling of statusParent.children) {
+      if (sibling === card) continue
+      const t = (sibling.innerText || sibling.textContent || '').trim()
+      if (t.length > 120) continue  // skip large sections (other card bodies)
+      if (/(niet.actief|inactief|inactive|inaktiv|inactif|inactivo|not.active)/i.test(t)) { ad.is_active = false; break }
+      if (/\b(actief|active|aktiv|actif|activo)\b/i.test(t)) { ad.is_active = true; break }
+    }
+  }
+  // Fallback: check inside the card itself
+  if (ad.is_active === null) {
+    const t = card.innerText || card.textContent || ''
+    if (/(niet.actief|inactief|inactive|inaktiv|inactif|inactivo|not.active)/i.test(t)) ad.is_active = false
+    else if (/\b(actief|active|aktiv|actif|activo)\b/i.test(t)) ad.is_active = true
+  }
 
   // ── CTA button text ──
   const buttons = [...card.querySelectorAll('a[role="button"], div[role="button"], button')]
@@ -280,6 +293,7 @@ function extractAdData(card) {
   if (destUrl) ad.destination_url = destUrl
 
   ad.source_url = window.location.href
+
   return ad
 }
 
@@ -417,6 +431,7 @@ function showPanel(anchorBtn, adData) {
               destination_url: adData.destination_url || null,
               cta_text: adData.cta_text || null,
               is_active: adData.is_active ?? null,
+              ad_library_id: adData.ad_library_id || null,
               source_url: adData.source_url || null,
               notes: notes.value.trim() || null,
               tags: [],

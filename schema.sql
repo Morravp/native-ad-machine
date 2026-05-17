@@ -36,6 +36,14 @@ CREATE TABLE IF NOT EXISTS format_examples (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS cloned_pages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  url TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  html TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS ads (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ad_id TEXT NOT NULL,

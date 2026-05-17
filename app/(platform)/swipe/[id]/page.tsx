@@ -14,6 +14,7 @@ interface SwipeItem {
   destination_url: string | null
   cta_text: string | null
   is_active: boolean | null
+  ad_library_id: string | null
   source_url: string | null
   notes: string | null
   tags: string[]
@@ -92,7 +93,8 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
     .filter(item => {
       if (mediaFilter === 'video' && !item.video_url) return false
       if (mediaFilter === 'image' && item.video_url) return false
-      if (activeFilter === 'active' && item.is_active !== true) return false
+      // null = status unknown (saved before this feature) — treat as active
+      if (activeFilter === 'active' && item.is_active === false) return false
       if (activeFilter === 'inactive' && item.is_active !== false) return false
       if (search) {
         const q = search.toLowerCase()
@@ -472,6 +474,17 @@ export default function BoardPage({ params }: { params: Promise<{ id: string }> 
                   background: 'var(--bg3)', borderRadius: 7, padding: '10px 12px',
                 }}>
                   {modal.ad_copy}
+                </div>
+              )}
+
+              {modal.ad_library_id && (
+                <div style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'monospace' }}>
+                  Library ID: <a
+                    href={`https://www.facebook.com/ads/library/?id=${modal.ad_library_id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'var(--accent)' }}
+                  >{modal.ad_library_id} ↗</a>
                 </div>
               )}
 
