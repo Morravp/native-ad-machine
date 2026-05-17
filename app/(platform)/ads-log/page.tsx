@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import AdDetailModal from '@/components/AdDetailModal'
+import ConfirmModal from '@/components/ConfirmModal'
 import { Ad } from '@/lib/types'
 
 export default function AdsLogPage() {
   const [ads, setAds] = useState<Ad[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedAd, setSelectedAd] = useState<Ad | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
   async function loadAds() {
     const res = await fetch('/api/ads')
@@ -19,9 +21,10 @@ export default function AdsLogPage() {
 
   useEffect(() => { loadAds() }, [])
 
-  async function deleteAd(id: string) {
-    if (!confirm('Delete this ad?')) return
-    await fetch(`/api/ads/${id}`, { method: 'DELETE' })
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    await fetch(`/api/ads/${deleteTarget}`, { method: 'DELETE' })
+    setDeleteTarget(null)
     loadAds()
   }
 
@@ -66,7 +69,7 @@ export default function AdsLogPage() {
                 <button
                   className="btn btn-sm"
                   style={{ color: 'var(--red)' }}
-                  onClick={e => { e.stopPropagation(); deleteAd(ad.id) }}
+                  onClick={e => { e.stopPropagation(); setDeleteTarget(ad.id) }}
                 >✕</button>
               </span>
             </div>
@@ -81,6 +84,15 @@ export default function AdsLogPage() {
           onClose={() => setSelectedAd(null)}
         />
       )}
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete this ad?"
+        message="This ad will be permanently removed from your log."
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </>
   )
 }

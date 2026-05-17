@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import ConfirmModal from '@/components/ConfirmModal'
 
 interface Clone {
   id: string
@@ -18,6 +19,7 @@ export default function LandingPageList() {
   const [url, setUrl] = useState('')
   const [cloning, setCloning] = useState(false)
   const [error, setError] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<Clone | null>(null)
 
   useEffect(() => {
     fetch('/api/cloned-pages')
@@ -45,11 +47,11 @@ export default function LandingPageList() {
     }
   }
 
-  async function deleteClone(id: string, e: React.MouseEvent) {
-    e.preventDefault()
-    if (!confirm('Delete this clone?')) return
-    await fetch(`/api/cloned-pages/${id}`, { method: 'DELETE' })
-    setClones(prev => prev.filter(c => c.id !== id))
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    await fetch(`/api/cloned-pages/${deleteTarget.id}`, { method: 'DELETE' })
+    setClones(prev => prev.filter(c => c.id !== deleteTarget.id))
+    setDeleteTarget(null)
   }
 
   return (
@@ -110,7 +112,7 @@ export default function LandingPageList() {
                     <button
                       className="btn btn-sm"
                       style={{ color: 'var(--red)', padding: '3px 8px', fontSize: 11 }}
-                      onClick={e => deleteClone(clone.id, e)}
+                      onClick={e => { e.preventDefault(); setDeleteTarget(clone) }}
                     >✕</button>
                   </div>
                 </div>
@@ -119,6 +121,15 @@ export default function LandingPageList() {
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="Delete this clone?"
+        message={deleteTarget ? `"${deleteTarget.title || deleteTarget.url}" will be permanently removed.` : undefined}
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </>
   )
 }
