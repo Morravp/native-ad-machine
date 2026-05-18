@@ -28,8 +28,19 @@ interface Section {
   label: string
 }
 
+interface AiModal {
+  sectionLabel: string
+  sectionIndex: number
+  loading: boolean
+  result: string
+  error: string
+}
+
 type Viewport = 'desktop' | 'mobile'
 type RightTab = 'sections' | 'element'
+type PendingAction =
+  | { action: 'download' | 'copy'; index: number }
+  | { action: 'ai'; index: number; resolve: (html: string) => void }
 
 const LANGUAGES = [
   { code: 'nl', label: 'Dutch' },
@@ -97,11 +108,13 @@ export default function CloneEditor() {
   const [isDirty, setIsDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleteSection, setDeleteSection] = useState<Section | null>(null)
+  const [aiModal, setAiModal] = useState<AiModal | null>(null)
+  const [aiCopied, setAiCopied] = useState(false)
 
   const langMenuRef = useRef<HTMLDivElement>(null)
   const htmlRef = useRef(html)
   const sectionsRef = useRef(sections)
-  const pendingAction = useRef<{ action: 'download' | 'copy'; index: number } | null>(null)
+  const pendingAction = useRef<PendingAction | null>(null)
   const fullHtmlResolve = useRef<((h: string) => void) | null>(null)
   const savedHtmlRef = useRef('')
 
@@ -139,12 +152,12 @@ export default function CloneEditor() {
         }
       } else if (e.data?.type === 'SECTION_HTML') {
         const pa = pendingAction.current
-        if (!pa) return
+        if (!pa || pa.index !== e.data.index) return
         pendingAction.current = null
-        const currentSections = sectionsRef.current
-        const section = currentSections.find(s => s.index === e.data.index)
-        const label = section?.label || `section-${e.data.index + 1}`
-        if (pa.action === 'copy') {
+
+        if (pa.action === 'ai') {
+          pa.resolve(e.data.outerHtml)
+        } else if (pa.action === 'copy') {
           navigator.clipboard.writeText(e.data.outerHtml).catch(() => {})
           setCopyFeedback(e.data.index)
           setTimeout(() => setCopyFeedback(null), 1500)
@@ -152,6 +165,8 @@ export default function CloneEditor() {
           const styleMatches = htmlRef.current.match(/<style[^>]*>[\s\S]*?<\/style>/gi) ?? []
           const styleBlocks = styleMatches.join('\n')
           const fullHtml = `<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n${styleBlocks}\n</head>\n<body>\n${e.data.outerHtml}\n</body>\n</html>`
+          const section = sectionsRef.current.find(s => s.index === e.data.index)
+          const label = section?.label || `section-${e.data.index + 1}`
           const blob = new Blob([fullHtml], { type: 'text/html' })
           const a = document.createElement('a')
           a.href = URL.createObjectURL(blob)
@@ -231,6 +246,22 @@ export default function CloneEditor() {
       }
     }
 
+    if (e.data.type === 'REPLACE_SECTION') {
+      var children = Array.from(document.body.children);
+      var el = children[e.data.index];
+      if (el && e.data.html) {
+        el.outerHTML = e.data.html;
+        var newChildren = Array.from(document.body.children);
+        var newSections = newChildren.map(function(child, i) {
+          var firstH = child.querySelector('h1,h2,h3,h4,h5,h6');
+          var label = (firstH && firstH.textContent && firstH.textContent.trim()) || (child.tagName.toLowerCase() + ' ' + (i + 1));
+          return { index: i, tag: child.tagName.toLowerCase(), label: label.slice(0, 60) };
+        });
+        window.parent.postMessage({ type: 'SECTIONS_LOADED', sections: newSections }, '*');
+        window.parent.postMessage({ type: 'EDIT_APPLIED' }, '*');
+      }
+    }
+
     if (e.data.type === 'GET_SECTION_HTML') {
       var children = Array.from(document.body.children);
       var el = children[e.data.index];
@@ -299,10 +330,6 @@ export default function CloneEditor() {
     iframeRef.current?.contentWindow?.postMessage({ type: 'CLEAR_SECTION' }, '*')
   }
 
-  function confirmDeleteSection(section: Section) {
-    setDeleteSection(section)
-  }
-
   function doDeleteSection() {
     if (!deleteSection) return
     iframeRef.current?.contentWindow?.postMessage({ type: 'DELETE_SECTION', index: deleteSection.index }, '*')
@@ -313,6 +340,47 @@ export default function CloneEditor() {
   function requestSectionHtml(index: number, action: 'download' | 'copy') {
     pendingAction.current = { action, index }
     iframeRef.current?.contentWindow?.postMessage({ type: 'GET_SECTION_HTML', index }, '*')
+  }
+
+  async function generateCleanHtml(section: Section) {
+    setAiModal({ sectionLabel: section.label, sectionIndex: section.index, loading: true, result: '', error: '' })
+
+    // Get live section HTML from iframe
+    const sectionHtml = await new Promise<string>(resolve => {
+      pendingAction.current = { action: 'ai', index: section.index, resolve }
+      iframeRef.current?.contentWindow?.postMessage({ type: 'GET_SECTION_HTML', index: section.index }, '*')
+      setTimeout(() => {
+        if (pendingAction.current?.action === 'ai') { pendingAction.current = null; resolve('') }
+      }, 5000)
+    })
+
+    // Extract page styles to give Claude context
+    const currentHtml = savedHtmlRef.current || htmlRef.current
+    const styleMatches = currentHtml.match(/<style[^>]*>([\s\S]*?)<\/style>/gi) ?? []
+    const pageStyles = styleMatches.map(s => s.replace(/<\/?style[^>]*>/gi, '')).join('\n')
+
+    try {
+      const res = await fetch('/api/clean-section', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sectionHtml, pageStyles, pageUrl: clone?.url }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Generation failed')
+      setAiModal(prev => prev ? { ...prev, loading: false, result: data.html } : null)
+    } catch (err: any) {
+      setAiModal(prev => prev ? { ...prev, loading: false, error: err.message } : null)
+    }
+  }
+
+  function applyAiToPage() {
+    if (!aiModal?.result) return
+    iframeRef.current?.contentWindow?.postMessage({
+      type: 'REPLACE_SECTION',
+      index: aiModal.sectionIndex,
+      html: aiModal.result,
+    }, '*')
+    setAiModal(null)
   }
 
   async function applyEdit() {
@@ -361,9 +429,10 @@ export default function CloneEditor() {
   }
 
   function downloadShopify() {
-    if (!html) return
+    const content = savedHtmlRef.current || html
+    if (!content) return
     const scopeClass = `lp-clone-${id.slice(0, 8)}`
-    const liquid = scopeHtmlForShopify(html, scopeClass)
+    const liquid = scopeHtmlForShopify(content, scopeClass)
     const blob = new Blob([liquid], { type: 'text/plain' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -399,7 +468,13 @@ export default function CloneEditor() {
           if (!part.startsWith('data: ')) continue
           const event = JSON.parse(part.slice(6))
           if (event.type === 'progress') setTranslateProgress(event.value)
-          else if (event.type === 'done') { setTranslateProgress(1); setHtml(event.html); setIframeHtml(event.html); savedHtmlRef.current = event.html; setIsDirty(false) }
+          else if (event.type === 'done') {
+            setTranslateProgress(1)
+            setHtml(event.html)
+            setIframeHtml(event.html)
+            savedHtmlRef.current = event.html
+            setIsDirty(false)
+          }
           else if (event.type === 'error') throw new Error(event.error)
         }
       }
@@ -446,8 +521,16 @@ export default function CloneEditor() {
         <div className="topbar-actions">
 
           <div className="viewport-toggle">
-            <button className={`viewport-btn${viewport === 'desktop' ? ' active' : ''}`} onClick={() => { setIframeHtml(savedHtmlRef.current || html); setViewport('desktop') }} title="Desktop">🖥</button>
-            <button className={`viewport-btn${viewport === 'mobile' ? ' active' : ''}`} onClick={() => { setIframeHtml(savedHtmlRef.current || html); setViewport('mobile') }} title="Mobile (390px)">📱</button>
+            <button
+              className={`viewport-btn${viewport === 'desktop' ? ' active' : ''}`}
+              onClick={() => { setIframeHtml(savedHtmlRef.current || html); setViewport('desktop') }}
+              title="Desktop"
+            >🖥</button>
+            <button
+              className={`viewport-btn${viewport === 'mobile' ? ' active' : ''}`}
+              onClick={() => { setIframeHtml(savedHtmlRef.current || html); setViewport('mobile') }}
+              title="Mobile (390px)"
+            >📱</button>
           </div>
 
           <button
@@ -480,7 +563,7 @@ export default function CloneEditor() {
 
           <div className="download-group">
             <button className="btn btn-sm" onClick={downloadHtml}>↓ HTML</button>
-            <button className="btn btn-sm btn-accent" onClick={downloadShopify} title="Scoped .liquid section for Shopify">↓ Shopify</button>
+            <button className="btn btn-sm btn-accent" onClick={downloadShopify} title="Scoped .liquid for Shopify">↓ Shopify</button>
           </div>
 
         </div>
@@ -540,6 +623,14 @@ export default function CloneEditor() {
                       <span className="clone-section-label">{s.label}</span>
                       <div className="clone-section-actions">
                         <button
+                          className="btn btn-sm clone-section-ai-btn"
+                          title="Generate clean HTML with AI"
+                          onClick={e => { e.stopPropagation(); generateCleanHtml(s) }}
+                          style={{ padding: '3px 7px', fontSize: 11 }}
+                        >
+                          ✦
+                        </button>
+                        <button
                           className="btn btn-sm"
                           title="Copy HTML"
                           onClick={e => { e.stopPropagation(); requestSectionHtml(s.index, 'copy') }}
@@ -558,7 +649,7 @@ export default function CloneEditor() {
                         <button
                           className="btn btn-sm"
                           title="Delete section"
-                          onClick={e => { e.stopPropagation(); confirmDeleteSection(s) }}
+                          onClick={e => { e.stopPropagation(); setDeleteSection(s) }}
                           style={{ padding: '3px 7px', fontSize: 11, color: 'var(--red)' }}
                         >
                           ✕
@@ -595,21 +686,11 @@ export default function CloneEditor() {
                     <>
                       <div className="clone-edit-field">
                         <label className="field-label">Image URL</label>
-                        <input
-                          type="text"
-                          value={editSrc}
-                          onChange={e => setEditSrc(e.target.value)}
-                          placeholder="https://example.com/image.jpg"
-                        />
+                        <input type="text" value={editSrc} onChange={e => setEditSrc(e.target.value)} placeholder="https://…" />
                       </div>
                       <div className="clone-edit-field">
                         <label className="field-label">Alt text</label>
-                        <input
-                          type="text"
-                          value={editText}
-                          onChange={e => setEditText(e.target.value)}
-                          placeholder="Image description"
-                        />
+                        <input type="text" value={editText} onChange={e => setEditText(e.target.value)} />
                       </div>
                     </>
                   ) : (
@@ -628,7 +709,7 @@ export default function CloneEditor() {
                     {saving ? '…' : 'Apply & Save'}
                   </button>
                   <div className="notice-box">
-                    Applies the change live and saves automatically. Download HTML to export.
+                    Applies the change live and saves automatically.
                   </div>
                 </div>
               )}
@@ -637,10 +718,69 @@ export default function CloneEditor() {
         </div>
       </div>
 
+      {/* AI Clean HTML Modal */}
+      {aiModal && (
+        <div className="modal-backdrop" onClick={() => !aiModal.loading && setAiModal(null)}>
+          <div className="ai-section-modal" onClick={e => e.stopPropagation()}>
+            <div className="ai-section-modal-header">
+              <div>
+                <div className="ai-section-modal-title">✦ AI Clean HTML</div>
+                <div className="ai-section-modal-sub">{aiModal.sectionLabel}</div>
+              </div>
+              {!aiModal.loading && (
+                <button className="modal-close" onClick={() => setAiModal(null)}>✕</button>
+              )}
+            </div>
+
+            {aiModal.loading ? (
+              <div className="ai-section-loading">
+                <span className="spinner" />
+                <span>Claude is analyzing and rewriting this section…</span>
+              </div>
+            ) : aiModal.error ? (
+              <div className="ai-section-error">{aiModal.error}</div>
+            ) : (
+              <>
+                <div className="ai-section-code">
+                  <pre>{aiModal.result}</pre>
+                </div>
+                <div className="ai-section-actions">
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(aiModal.result)
+                      setAiCopied(true)
+                      setTimeout(() => setAiCopied(false), 1500)
+                    }}
+                  >
+                    {aiCopied ? '✓ Copied' : '⎘ Copy HTML'}
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => {
+                      const blob = new Blob([aiModal.result], { type: 'text/html' })
+                      const a = document.createElement('a')
+                      a.href = URL.createObjectURL(blob)
+                      a.download = `${aiModal.sectionLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}-clean.html`
+                      a.click()
+                    }}
+                  >
+                    ↓ Download
+                  </button>
+                  <button className="btn btn-sm btn-accent" onClick={applyAiToPage}>
+                    Apply to Page
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <ConfirmModal
         open={!!deleteSection}
         title="Delete this section?"
-        message={deleteSection ? `"${deleteSection.label}" will be removed from the page. Hit ↑ Save to persist the change.` : undefined}
+        message={deleteSection ? `"${deleteSection.label}" will be removed. Hit ↑ Save to persist.` : undefined}
         confirmLabel="Delete"
         onConfirm={doDeleteSection}
         onCancel={() => setDeleteSection(null)}
