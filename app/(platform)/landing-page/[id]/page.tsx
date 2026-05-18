@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import ConfirmModal from '@/components/ConfirmModal'
+import JSZip from 'jszip'
 
 interface Clone {
   id: string
@@ -73,6 +74,7 @@ interface SectionCardProps {
   pageStyles: string
   viewport: Viewport
   selected: boolean
+  hasLiquid: boolean
   aiGenerating: boolean
   aiTargetId: string | null
   copyFeedback: string | null
@@ -84,7 +86,7 @@ interface SectionCardProps {
 }
 
 function SectionCard({
-  section, pageStyles, viewport, selected,
+  section, pageStyles, viewport, selected, hasLiquid,
   aiGenerating, aiTargetId, copyFeedback,
   onCleanHtml, onCopyRaw, onDownload, onDelete, onSelect,
 }: SectionCardProps) {
@@ -116,18 +118,15 @@ function SectionCard({
         <span className="section-card-tag">{section.tag}</span>
         <span className="section-card-label">{section.label}</span>
         <div className="section-card-actions">
+          {hasLiquid && <span className="section-card-liquid-badge" title="Liquid generated">✦</span>}
           <button
-            className="btn btn-sm section-card-ai-btn"
-            title="Generate Shopify Liquid section with editable schema"
+            className={`btn btn-sm section-card-ai-btn${hasLiquid ? ' done' : ''}`}
+            title={hasLiquid ? 'Regenerate Liquid' : 'Generate Shopify Liquid section'}
             disabled={aiGenerating}
             onClick={e => { e.stopPropagation(); onCleanHtml(section) }}
           >
-            {aiGenerating && aiTargetId === section.id ? '…' : '✦ Liquid'}
+            {aiGenerating && aiTargetId === section.id ? '…' : hasLiquid ? '↺ Liquid' : '✦ Liquid'}
           </button>
-          <button className="btn btn-sm" title="Copy raw HTML" onClick={e => { e.stopPropagation(); onCopyRaw(section.id) }}>
-            {copyFeedback === section.id ? '✓' : '⎘'}
-          </button>
-          <button className="btn btn-sm" title="Download HTML" onClick={e => { e.stopPropagation(); onDownload(section.id) }}>↓</button>
           <button className="btn btn-sm" title="Delete section" style={{ color: 'var(--red)' }} onClick={e => { e.stopPropagation(); onDelete(section) }}>🗑</button>
         </div>
       </div>
@@ -194,21 +193,10 @@ export default function CloneEditor() {
   const [deleteSection, setDeleteSection] = useState<Section | null>(null)
   const [aiGenerating, setAiGenerating] = useState(false)
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
-
-  // Shopify connection state
-  const [shopifyConn, setShopifyConn] = useState<{ storeUrl: string; themeId: string | null; themeName: string | null } | null>(null)
-  const [shopifyModal, setShopifyModal] = useState(false)
-  const [shopifyStep, setShopifyStep] = useState<'credentials' | 'theme'>('credentials')
-  const [shopifyForm, setShopifyForm] = useState({ storeUrl: '', token: '' })
-  const [shopifyThemes, setShopifyThemes] = useState<{ id: string; name: string; role: string }[]>([])
-  const [shopifySelectedTheme, setShopifySelectedTheme] = useState('')
-  const [shopifyConnecting, setShopifyConnecting] = useState(false)
-  const [shopifyError, setShopifyError] = useState('')
-  const [shopifyPushing, setShopifyPushing] = useState(false)
-  const [shopifyPushResult, setShopifyPushResult] = useState<{ ok?: boolean; error?: string; editorUrl?: string; filename?: string } | null>(null)
+  const [generatedLiquid, setGeneratedLiquid] = useState<Record<string, { label: string; liquid: string }>>({})
+  const [zipping, setZipping] = useState(false)
 
   const langMenuRef = useRef<HTMLDivElement>(null)
-  const shopifyDropdownRef = useRef<HTMLDivElement>(null)
   const htmlRef = useRef(html)
   const sectionsRef = useRef(sections)
   const pendingAction = useRef<PendingAction | null>(null)
@@ -238,14 +226,6 @@ export default function CloneEditor() {
       })
   }, [id])
 
-  useEffect(() => {
-    fetch('/api/shopify/connection')
-      .then(r => r.json())
-      .then(data => {
-        if (data.connected) setShopifyConn({ storeUrl: data.storeUrl, themeId: data.themeId, themeName: data.themeName })
-      })
-      .catch(() => {})
-  }, [])
 
   useEffect(() => {
     function handleMessage(e: MessageEvent) {
@@ -306,7 +286,6 @@ export default function CloneEditor() {
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (langMenuRef.current && !langMenuRef.current.contains(e.target as Node)) setShowLangMenu(false)
-      if (shopifyDropdownRef.current && !shopifyDropdownRef.current.contains(e.target as Node)) setShopifyModal(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -519,6 +498,7 @@ export default function CloneEditor() {
       setSectionCodeHtml(data.html)
       setSectionCodeIsClean(true)
       setSectionCodeCleanId(section.id)
+      setGeneratedLiquid(prev => ({ ...prev, [section.id]: { label: section.label, liquid: data.html } }))
     } catch (err: any) {
       setSectionCodeHtml(`/* Error: ${err.message} */`)
     } finally {
@@ -644,59 +624,42 @@ export default function CloneEditor() {
     }
   }
 
-  async function connectShopify() {
-    setShopifyConnecting(true)
-    setShopifyError('')
+  async function downloadAllAsZip() {
+    const entries = Object.values(generatedLiquid)
+    if (entries.length === 0) return
+    setZipping(true)
     try {
-      const res = await fetch('/api/shopify/connection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storeUrl: shopifyForm.storeUrl, accessToken: shopifyForm.token }),
+      const zip = new JSZip()
+      const folder = zip.folder('sections')!
+      entries.forEach(({ label, liquid }) => {
+        const filename = `cloned-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50)}.liquid`
+        folder.file(filename, liquid)
       })
-      const data = await res.json()
-      if (!res.ok) { setShopifyError(data.error || 'Connection failed'); return }
-      setShopifyThemes(data.themes ?? [])
-      setShopifySelectedTheme(data.themes?.find((t: any) => t.role === 'main')?.id ?? data.themes?.[0]?.id ?? '')
-      setShopifyStep('theme')
-    } catch {
-      setShopifyError('Network error — please try again.')
+      zip.file('HOW-TO-INSTALL.txt', [
+        'HOW TO ADD THESE SECTIONS TO SHOPIFY',
+        '=====================================',
+        '',
+        '1. In your Shopify admin go to:',
+        '   Online Store → Themes → [Your theme] → Edit code',
+        '',
+        '2. Click the "sections/" folder in the left sidebar',
+        '',
+        '3. Click "Add a new section" and upload each .liquid file',
+        '   from the sections/ folder in this ZIP',
+        '',
+        '4. Go to Online Store → Themes → Customize',
+        '   Click "Add section" and scroll down to find your',
+        '   cloned sections — every field is editable there',
+        '',
+        `Generated by Native Ad Machine on ${new Date().toLocaleDateString()}`,
+      ].join('\n'))
+      const blob = await zip.generateAsync({ type: 'blob' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `${(clone?.title || 'cloned-sections').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}-sections.zip`
+      a.click()
     } finally {
-      setShopifyConnecting(false)
-    }
-  }
-
-  async function saveShopifyTheme() {
-    const theme = shopifyThemes.find(t => t.id === shopifySelectedTheme)
-    if (!theme) return
-    await fetch('/api/shopify/connection', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ themeId: theme.id, themeName: theme.name }),
-    })
-    setShopifyConn({ storeUrl: shopifyForm.storeUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''), themeId: theme.id, themeName: theme.name })
-    setShopifyModal(false)
-    setShopifyStep('credentials')
-    setShopifyForm({ storeUrl: '', token: '' })
-    setShopifyThemes([])
-  }
-
-  async function pushToShopify() {
-    if (!sectionCodeHtml || sectionCodeHtml === 'loading' || !sectionCodeIsClean) return
-    if (!shopifyConn?.themeId) { setShopifyModal(true); return }
-    setShopifyPushing(true)
-    setShopifyPushResult(null)
-    try {
-      const res = await fetch('/api/shopify/push-section', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ liquidContent: sectionCodeHtml, sectionName: sectionCodeLabel }),
-      })
-      const data = await res.json()
-      setShopifyPushResult(res.ok ? { ok: true, editorUrl: data.editorUrl, filename: data.filename } : { error: data.error })
-    } catch {
-      setShopifyPushResult({ error: 'Network error' })
-    } finally {
-      setShopifyPushing(false)
+      setZipping(false)
     }
   }
 
@@ -758,99 +721,16 @@ export default function CloneEditor() {
               </div>
             )}
           </div>
-          <div className="download-group">
-            <button className="btn btn-sm" onClick={downloadHtml}>↓ HTML</button>
-          </div>
-          <div style={{ position: 'relative' }} ref={shopifyDropdownRef}>
+          {Object.keys(generatedLiquid).length > 0 && (
             <button
-              className={`btn btn-sm${shopifyConn ? ' shopify-connected-btn' : ''}`}
-              onClick={() => { setShopifyModal(v => !v); setShopifyStep('credentials'); setShopifyError('') }}
-              title={shopifyConn ? `Connected: ${shopifyConn.storeUrl}` : 'Connect Shopify store'}
+              className="btn btn-sm shopify-connected-btn"
+              onClick={downloadAllAsZip}
+              disabled={zipping}
+              title="Download all generated Liquid sections as a ZIP"
             >
-              {shopifyConn ? `↑ ${shopifyConn.themeName ?? 'Shopify'}` : '↑ Connect Shopify'}
+              {zipping ? '…' : `↓ All Sections (${Object.keys(generatedLiquid).length})`}
             </button>
-
-            {shopifyModal && (
-              <div className="shopify-dropdown" onClick={e => e.stopPropagation()}>
-                <div className="shopify-modal-header">
-                  <div>
-                    <div className="shopify-modal-title">
-                      {shopifyStep === 'credentials' ? '↑ Connect Shopify' : '↑ Select Theme'}
-                    </div>
-                    {shopifyConn && shopifyStep === 'credentials' && (
-                      <div className="shopify-modal-connected">Connected: {shopifyConn.storeUrl}</div>
-                    )}
-                  </div>
-                  <button className="modal-close" onClick={() => { setShopifyModal(false); setShopifyStep('credentials'); setShopifyError('') }}>✕</button>
-                </div>
-
-                {shopifyStep === 'credentials' ? (
-                  <div className="shopify-modal-body">
-                    <div className="shopify-field">
-                      <label>Store URL</label>
-                      <input
-                        type="text"
-                        placeholder="my-store.myshopify.com"
-                        value={shopifyForm.storeUrl}
-                        onChange={e => setShopifyForm(f => ({ ...f, storeUrl: e.target.value }))}
-                        autoComplete="off"
-                      />
-                    </div>
-                    <div className="shopify-field">
-                      <label>Admin API Access Token</label>
-                      <input
-                        type="password"
-                        placeholder="shpat_xxxxxxxxxxxxxxxx"
-                        value={shopifyForm.token}
-                        onChange={e => setShopifyForm(f => ({ ...f, token: e.target.value }))}
-                        autoComplete="off"
-                      />
-                      <span className="shopify-field-hint">
-                        Shopify Admin → Settings → Apps → Develop apps → Create app → Admin API scopes → enable <code>write_themes</code> → Install → copy token
-                      </span>
-                    </div>
-                    {shopifyError && <div className="shopify-error">{shopifyError}</div>}
-                    <div className="shopify-modal-actions">
-                      {shopifyConn && (
-                        <button className="btn btn-sm" style={{ color: 'var(--red)' }} onClick={async () => {
-                          await fetch('/api/shopify/connection', { method: 'DELETE' })
-                          setShopifyConn(null)
-                          setShopifyModal(false)
-                        }}>Disconnect</button>
-                      )}
-                      <button
-                        className="btn btn-accent"
-                        style={{ marginLeft: 'auto' }}
-                        disabled={!shopifyForm.storeUrl || !shopifyForm.token || shopifyConnecting}
-                        onClick={connectShopify}
-                      >
-                        {shopifyConnecting ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Connecting…</> : 'Connect →'}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="shopify-modal-body">
-                    <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 4 }}>Choose which theme to push sections to:</p>
-                    <div className="shopify-theme-list">
-                      {shopifyThemes.map(t => (
-                        <label key={t.id} className={`shopify-theme-item${shopifySelectedTheme === t.id ? ' selected' : ''}`}>
-                          <input type="radio" name="theme" value={t.id} checked={shopifySelectedTheme === t.id} onChange={() => setShopifySelectedTheme(t.id)} />
-                          <span className="shopify-theme-name">{t.name}</span>
-                          {t.role === 'main' && <span className="shopify-theme-live">Live</span>}
-                        </label>
-                      ))}
-                    </div>
-                    <div className="shopify-modal-actions">
-                      <button className="btn btn-sm" onClick={() => setShopifyStep('credentials')}>← Back</button>
-                      <button className="btn btn-accent" style={{ marginLeft: 'auto' }} disabled={!shopifySelectedTheme} onClick={saveShopifyTheme}>
-                        Save & Finish
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
@@ -896,6 +776,7 @@ export default function CloneEditor() {
               pageStyles={pageStyles}
               viewport={viewport}
               selected={selectedSectionId === s.id}
+              hasLiquid={!!generatedLiquid[s.id]}
               aiGenerating={aiGenerating}
               aiTargetId={selectedSectionId}
               copyFeedback={copyFeedback}
@@ -928,18 +809,7 @@ export default function CloneEditor() {
               </span>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 {sectionCodeIsClean && sectionCodeHtml !== 'loading' && (
-                  <>
-                    <button className="btn btn-sm btn-accent" style={{ fontSize: 10, padding: '3px 8px' }} onClick={applyAiToPage}>Apply</button>
-                    <button
-                      className="btn btn-sm shopify-push-btn"
-                      style={{ fontSize: 10, padding: '3px 8px' }}
-                      disabled={shopifyPushing}
-                      onClick={pushToShopify}
-                      title={shopifyConn ? `Push to ${shopifyConn.themeName}` : 'Connect Shopify first'}
-                    >
-                      {shopifyPushing ? '…' : shopifyConn ? '↑ Shopify' : '↑ Connect'}
-                    </button>
-                  </>
+                  <button className="btn btn-sm btn-accent" style={{ fontSize: 10, padding: '3px 8px' }} onClick={applyAiToPage}>Apply</button>
                 )}
                 {sectionCodeHtml !== 'loading' && (
                   <>
@@ -957,21 +827,14 @@ export default function CloneEditor() {
                     }}>↓</button>
                   </>
                 )}
-                <button className="builder-panel-close" onClick={() => { setSectionCodeHtml(''); setSelectedSectionId(null); setShopifyPushResult(null) }}>✕</button>
+                <button className="builder-panel-close" onClick={() => { setSectionCodeHtml(''); setSelectedSectionId(null) }}>✕</button>
               </div>
             </div>
 
-            {/* Push result */}
-            {shopifyPushResult && (
-              <div className={`shopify-push-result${shopifyPushResult.ok ? ' ok' : ' err'}`}>
-                {shopifyPushResult.ok ? (
-                  <>
-                    <span>✓ Pushed as <code>{shopifyPushResult.filename}</code></span>
-                    <a href={shopifyPushResult.editorUrl} target="_blank" rel="noopener noreferrer">Open Theme Editor ↗</a>
-                  </>
-                ) : (
-                  <span>✕ {shopifyPushResult.error}</span>
-                )}
+            {sectionCodeIsClean && sectionCodeHtml !== 'loading' && (
+              <div className="shopify-install-hint">
+                <span>↓ Download → drag into Shopify</span>
+                <span className="shopify-install-path">Online Store → Themes → Edit code → sections/</span>
               </div>
             )}
 

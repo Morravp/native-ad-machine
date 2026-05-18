@@ -1916,3 +1916,35 @@ textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
   border-radius: 4px;
   padding: 1px 5px;
 }
+
+/* ── LIQUID BADGE ON SECTION CARD ── */
+.section-card-liquid-badge {
+  font-size: 10px;
+  color: #4ec47a;
+  font-family: 'DM Mono', monospace;
+  flex-shrink: 0;
+}
+
+.section-card-ai-btn.done {
+  background: rgba(78,196,122,0.1) !important;
+  color: #4ec47a !important;
+  border-color: rgba(78,196,122,0.3) !important;
+}
+
+/* ── SHOPIFY INSTALL HINT ── */
+.shopify-install-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text3);
+}
+
+.shopify-install-path {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: #4ec47a;
+}
