@@ -84,6 +84,7 @@ export default function CloneEditor() {
   const [editText, setEditText] = useState('')
   const [editSrc, setEditSrc] = useState('')
   const [html, setHtml] = useState('')
+  const [iframeHtml, setIframeHtml] = useState('')
   const [editMode, setEditMode] = useState(false)
   const [viewport, setViewport] = useState<Viewport>('desktop')
   const [translating, setTranslating] = useState(false)
@@ -113,6 +114,7 @@ export default function CloneEditor() {
       .then(data => {
         setClone(data)
         setHtml(data.html)
+        setIframeHtml(data.html)
         savedHtmlRef.current = data.html
         setLoading(false)
       })
@@ -125,7 +127,7 @@ export default function CloneEditor() {
         setSelectedSectionIdx(null)
       } else if (e.data?.type === 'ELEMENT_SELECTED') {
         setSelected(e.data)
-        setEditText(e.data.text ?? '')
+        setEditText(e.data.tag === 'IMG' ? (e.data.alt ?? '') : (e.data.text ?? ''))
         setEditSrc(e.data.src ?? '')
         setRightTab('element')
       } else if (e.data?.type === 'EDIT_APPLIED') {
@@ -242,7 +244,7 @@ export default function CloneEditor() {
     }
 
     if (e.data.type === 'UPDATE_ELEMENT' && selectedEl) {
-      selectedEl.innerText = e.data.text;
+      selectedEl.innerHTML = e.data.html;
       window.parent.postMessage({ type: 'EDIT_APPLIED' }, '*');
     }
 
@@ -272,7 +274,7 @@ export default function CloneEditor() {
     window.parent.postMessage({
       type: 'ELEMENT_SELECTED',
       tag: selectedEl.tagName,
-      text: isImg ? (selectedEl.alt || '') : (selectedEl.innerText || selectedEl.textContent || ''),
+      text: selectedEl.innerHTML || '',
       html: selectedEl.innerHTML || '',
       path: path.join(' > '),
       src: isImg ? selectedEl.src : null,
@@ -317,12 +319,11 @@ export default function CloneEditor() {
     if (!selected || !iframeRef.current?.contentWindow) return
     if (selected.tag === 'IMG') {
       iframeRef.current.contentWindow.postMessage({ type: 'UPDATE_IMAGE', src: editSrc, alt: editText }, '*')
-      setSelected(prev => prev ? { ...prev, src: editSrc, alt: editText } : null)
+      setSelected(prev => prev ? { ...prev, src: editSrc, alt: editText, text: editText } : null)
     } else {
-      iframeRef.current.contentWindow.postMessage({ type: 'UPDATE_ELEMENT', text: editText }, '*')
-      setSelected(prev => prev ? { ...prev, text: editText } : null)
+      iframeRef.current.contentWindow.postMessage({ type: 'UPDATE_ELEMENT', html: editText }, '*')
+      setSelected(prev => prev ? { ...prev, text: editText, html: editText } : null)
     }
-    // Brief delay so the iframe DOM updates before we snapshot it
     await new Promise(r => setTimeout(r, 80))
     await saveToDb(true)
   }
@@ -398,7 +399,7 @@ export default function CloneEditor() {
           if (!part.startsWith('data: ')) continue
           const event = JSON.parse(part.slice(6))
           if (event.type === 'progress') setTranslateProgress(event.value)
-          else if (event.type === 'done') { setTranslateProgress(1); setHtml(event.html); setIsDirty(false) }
+          else if (event.type === 'done') { setTranslateProgress(1); setHtml(event.html); setIframeHtml(event.html); savedHtmlRef.current = event.html; setIsDirty(false) }
           else if (event.type === 'error') throw new Error(event.error)
         }
       }
@@ -429,7 +430,7 @@ export default function CloneEditor() {
     )
   }
 
-  const iframeSrc = injectScript(html, editMode)
+  const iframeSrc = injectScript(iframeHtml || html, editMode)
 
   return (
     <>
@@ -445,13 +446,13 @@ export default function CloneEditor() {
         <div className="topbar-actions">
 
           <div className="viewport-toggle">
-            <button className={`viewport-btn${viewport === 'desktop' ? ' active' : ''}`} onClick={() => setViewport('desktop')} title="Desktop">🖥</button>
-            <button className={`viewport-btn${viewport === 'mobile' ? ' active' : ''}`} onClick={() => setViewport('mobile')} title="Mobile (390px)">📱</button>
+            <button className={`viewport-btn${viewport === 'desktop' ? ' active' : ''}`} onClick={() => { setIframeHtml(savedHtmlRef.current || html); setViewport('desktop') }} title="Desktop">🖥</button>
+            <button className={`viewport-btn${viewport === 'mobile' ? ' active' : ''}`} onClick={() => { setIframeHtml(savedHtmlRef.current || html); setViewport('mobile') }} title="Mobile (390px)">📱</button>
           </div>
 
           <button
             className={`btn btn-sm${editMode ? ' btn-accent' : ''}`}
-            onClick={() => { setEditMode(!editMode); setSelected(null) }}
+            onClick={() => { setIframeHtml(savedHtmlRef.current || html); setEditMode(!editMode); setSelected(null) }}
           >
             {editMode ? '✓ Editing' : '✎ Edit'}
           </button>
@@ -613,8 +614,13 @@ export default function CloneEditor() {
                     </>
                   ) : (
                     <div className="clone-edit-field">
-                      <label className="field-label">Text content</label>
-                      <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={5} />
+                      <label className="field-label">HTML content</label>
+                      <textarea
+                        value={editText}
+                        onChange={e => setEditText(e.target.value)}
+                        rows={7}
+                        style={{ fontFamily: 'DM Mono, monospace', fontSize: 11, lineHeight: 1.6 }}
+                      />
                     </div>
                   )}
 
