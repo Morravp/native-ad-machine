@@ -1784,21 +1784,24 @@ textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
 .shopify-push-result a { color: #4ec47a; text-decoration: none; white-space: nowrap; }
 .shopify-push-result a:hover { text-decoration: underline; }
 
-/* ── SHOPIFY MODAL ── */
-.shopify-modal {
+/* ── SHOPIFY DROPDOWN ── */
+.shopify-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 380px;
   background: var(--bg2);
   border: 1px solid var(--border2);
   border-radius: var(--radius-lg);
-  width: 440px;
-  max-width: calc(100vw - 32px);
-  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.6);
+  z-index: 500;
 }
 
 .shopify-modal-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 20px 20px 0;
+  padding: 16px 16px 0;
 }
 
 .shopify-modal-title {
@@ -1816,10 +1819,10 @@ textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
 }
 
 .shopify-modal-body {
-  padding: 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .shopify-field {

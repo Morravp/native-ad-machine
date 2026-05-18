@@ -208,6 +208,7 @@ export default function CloneEditor() {
   const [shopifyPushResult, setShopifyPushResult] = useState<{ ok?: boolean; error?: string; editorUrl?: string; filename?: string } | null>(null)
 
   const langMenuRef = useRef<HTMLDivElement>(null)
+  const shopifyDropdownRef = useRef<HTMLDivElement>(null)
   const htmlRef = useRef(html)
   const sectionsRef = useRef(sections)
   const pendingAction = useRef<PendingAction | null>(null)
@@ -305,6 +306,7 @@ export default function CloneEditor() {
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (langMenuRef.current && !langMenuRef.current.contains(e.target as Node)) setShowLangMenu(false)
+      if (shopifyDropdownRef.current && !shopifyDropdownRef.current.contains(e.target as Node)) setShopifyModal(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -759,13 +761,96 @@ export default function CloneEditor() {
           <div className="download-group">
             <button className="btn btn-sm" onClick={downloadHtml}>↓ HTML</button>
           </div>
-          <button
-            className={`btn btn-sm${shopifyConn ? ' shopify-connected-btn' : ''}`}
-            onClick={() => { setShopifyModal(true); setShopifyStep('credentials') }}
-            title={shopifyConn ? `Connected: ${shopifyConn.storeUrl}` : 'Connect Shopify store'}
-          >
-            {shopifyConn ? `↑ ${shopifyConn.themeName ?? 'Shopify'}` : '↑ Connect Shopify'}
-          </button>
+          <div style={{ position: 'relative' }} ref={shopifyDropdownRef}>
+            <button
+              className={`btn btn-sm${shopifyConn ? ' shopify-connected-btn' : ''}`}
+              onClick={() => { setShopifyModal(v => !v); setShopifyStep('credentials'); setShopifyError('') }}
+              title={shopifyConn ? `Connected: ${shopifyConn.storeUrl}` : 'Connect Shopify store'}
+            >
+              {shopifyConn ? `↑ ${shopifyConn.themeName ?? 'Shopify'}` : '↑ Connect Shopify'}
+            </button>
+
+            {shopifyModal && (
+              <div className="shopify-dropdown" onClick={e => e.stopPropagation()}>
+                <div className="shopify-modal-header">
+                  <div>
+                    <div className="shopify-modal-title">
+                      {shopifyStep === 'credentials' ? '↑ Connect Shopify' : '↑ Select Theme'}
+                    </div>
+                    {shopifyConn && shopifyStep === 'credentials' && (
+                      <div className="shopify-modal-connected">Connected: {shopifyConn.storeUrl}</div>
+                    )}
+                  </div>
+                  <button className="modal-close" onClick={() => { setShopifyModal(false); setShopifyStep('credentials'); setShopifyError('') }}>✕</button>
+                </div>
+
+                {shopifyStep === 'credentials' ? (
+                  <div className="shopify-modal-body">
+                    <div className="shopify-field">
+                      <label>Store URL</label>
+                      <input
+                        type="text"
+                        placeholder="my-store.myshopify.com"
+                        value={shopifyForm.storeUrl}
+                        onChange={e => setShopifyForm(f => ({ ...f, storeUrl: e.target.value }))}
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="shopify-field">
+                      <label>Admin API Access Token</label>
+                      <input
+                        type="password"
+                        placeholder="shpat_xxxxxxxxxxxxxxxx"
+                        value={shopifyForm.token}
+                        onChange={e => setShopifyForm(f => ({ ...f, token: e.target.value }))}
+                        autoComplete="off"
+                      />
+                      <span className="shopify-field-hint">
+                        Shopify Admin → Settings → Apps → Develop apps → Create app → Admin API scopes → enable <code>write_themes</code> → Install → copy token
+                      </span>
+                    </div>
+                    {shopifyError && <div className="shopify-error">{shopifyError}</div>}
+                    <div className="shopify-modal-actions">
+                      {shopifyConn && (
+                        <button className="btn btn-sm" style={{ color: 'var(--red)' }} onClick={async () => {
+                          await fetch('/api/shopify/connection', { method: 'DELETE' })
+                          setShopifyConn(null)
+                          setShopifyModal(false)
+                        }}>Disconnect</button>
+                      )}
+                      <button
+                        className="btn btn-accent"
+                        style={{ marginLeft: 'auto' }}
+                        disabled={!shopifyForm.storeUrl || !shopifyForm.token || shopifyConnecting}
+                        onClick={connectShopify}
+                      >
+                        {shopifyConnecting ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Connecting…</> : 'Connect →'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="shopify-modal-body">
+                    <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 4 }}>Choose which theme to push sections to:</p>
+                    <div className="shopify-theme-list">
+                      {shopifyThemes.map(t => (
+                        <label key={t.id} className={`shopify-theme-item${shopifySelectedTheme === t.id ? ' selected' : ''}`}>
+                          <input type="radio" name="theme" value={t.id} checked={shopifySelectedTheme === t.id} onChange={() => setShopifySelectedTheme(t.id)} />
+                          <span className="shopify-theme-name">{t.name}</span>
+                          {t.role === 'main' && <span className="shopify-theme-live">Live</span>}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="shopify-modal-actions">
+                      <button className="btn btn-sm" onClick={() => setShopifyStep('credentials')}>← Back</button>
+                      <button className="btn btn-accent" style={{ marginLeft: 'auto' }} disabled={!shopifySelectedTheme} onClick={saveShopifyTheme}>
+                        Save & Finish
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -987,96 +1072,6 @@ export default function CloneEditor() {
         onCancel={() => setDeleteSection(null)}
       />
 
-      {/* ── Shopify Connect Modal ── */}
-      {shopifyModal && (
-        <div className="modal-backdrop" onClick={() => { setShopifyModal(false); setShopifyStep('credentials'); setShopifyError('') }}>
-          <div className="shopify-modal" onClick={e => e.stopPropagation()}>
-            <div className="shopify-modal-header">
-              <div>
-                <div className="shopify-modal-title">
-                  {shopifyStep === 'credentials' ? '↑ Connect Shopify Store' : '↑ Select Theme'}
-                </div>
-                {shopifyConn && shopifyStep === 'credentials' && (
-                  <div className="shopify-modal-connected">Connected: {shopifyConn.storeUrl}</div>
-                )}
-              </div>
-              <button className="modal-close" onClick={() => { setShopifyModal(false); setShopifyStep('credentials'); setShopifyError('') }}>✕</button>
-            </div>
-
-            {shopifyStep === 'credentials' ? (
-              <div className="shopify-modal-body">
-                <div className="shopify-field">
-                  <label>Store URL</label>
-                  <input
-                    type="text"
-                    placeholder="my-store.myshopify.com"
-                    value={shopifyForm.storeUrl}
-                    onChange={e => setShopifyForm(f => ({ ...f, storeUrl: e.target.value }))}
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="shopify-field">
-                  <label>Admin API Access Token</label>
-                  <input
-                    type="password"
-                    placeholder="shpat_xxxxxxxxxxxxxxxx"
-                    value={shopifyForm.token}
-                    onChange={e => setShopifyForm(f => ({ ...f, token: e.target.value }))}
-                    autoComplete="off"
-                  />
-                  <span className="shopify-field-hint">
-                    Shopify Admin → Settings → Apps → Develop apps → Create app → Admin API access token
-                    (needs <code>write_themes</code> scope)
-                  </span>
-                </div>
-                {shopifyError && <div className="shopify-error">{shopifyError}</div>}
-                <div className="shopify-modal-actions">
-                  {shopifyConn && (
-                    <button className="btn btn-sm" style={{ color: 'var(--red)' }} onClick={async () => {
-                      await fetch('/api/shopify/connection', { method: 'DELETE' })
-                      setShopifyConn(null)
-                      setShopifyModal(false)
-                    }}>Disconnect</button>
-                  )}
-                  <button
-                    className="btn btn-accent"
-                    style={{ marginLeft: 'auto' }}
-                    disabled={!shopifyForm.storeUrl || !shopifyForm.token || shopifyConnecting}
-                    onClick={connectShopify}
-                  >
-                    {shopifyConnecting ? <><span className="spinner" style={{ width: 14, height: 14 }} /> Connecting…</> : 'Connect →'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="shopify-modal-body">
-                <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>Choose which theme to push sections to:</p>
-                <div className="shopify-theme-list">
-                  {shopifyThemes.map(t => (
-                    <label key={t.id} className={`shopify-theme-item${shopifySelectedTheme === t.id ? ' selected' : ''}`}>
-                      <input
-                        type="radio"
-                        name="theme"
-                        value={t.id}
-                        checked={shopifySelectedTheme === t.id}
-                        onChange={() => setShopifySelectedTheme(t.id)}
-                      />
-                      <span className="shopify-theme-name">{t.name}</span>
-                      {t.role === 'main' && <span className="shopify-theme-live">Live</span>}
-                    </label>
-                  ))}
-                </div>
-                <div className="shopify-modal-actions">
-                  <button className="btn btn-sm" onClick={() => setShopifyStep('credentials')}>← Back</button>
-                  <button className="btn btn-accent" style={{ marginLeft: 'auto' }} disabled={!shopifySelectedTheme} onClick={saveShopifyTheme}>
-                    Save & Finish
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </>
   )
 }
