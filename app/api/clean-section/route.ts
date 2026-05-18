@@ -94,6 +94,11 @@ SCHEMA RULES:
 - "default" must be the actual original text/value from the scraped HTML
 - "label" must be human-readable: "Headline", "Body text", "Button URL", etc.
 - Give the section a name matching its content: "Product Hero", "Testimonials", "FAQ Accordion", "Warning Notice", etc.
+- "presets" array is REQUIRED — without it the section will not appear in the Theme Editor "Add section" drawer:
+  \`\`\`json
+  "presets": [{ "name": "Section Name Here" }]
+  \`\`\`
+  The preset name must exactly match the top-level "name" field.
 
 ---
 
@@ -117,12 +122,26 @@ No markdown fences. No explanation.`
 
     // Safety net: if schema was opened but never closed (truncation), close it
     if (liquid.includes('{% schema %}') && !liquid.includes('{% endschema %}')) {
-      // Try to close any unclosed JSON object before appending the tag
       const schemaStart = liquid.lastIndexOf('{% schema %}')
       const schemaBody = liquid.slice(schemaStart + 12)
       const openBraces = (schemaBody.match(/\{/g) || []).length - (schemaBody.match(/\}/g) || []).length
       if (openBraces > 0) liquid += '}'.repeat(openBraces)
       liquid += '\n{% endschema %}'
+    }
+
+    // Safety net: inject presets if missing so section appears in Theme Editor "Add section"
+    if (liquid.includes('{% schema %}') && !liquid.includes('"presets"')) {
+      try {
+        const schemaMatch = liquid.match(/\{%\s*schema\s*%\}([\s\S]*?)\{%\s*endschema\s*%\}/)
+        if (schemaMatch) {
+          const schemaObj = JSON.parse(schemaMatch[1].trim())
+          schemaObj.presets = [{ name: schemaObj.name || 'Cloned Section' }]
+          liquid = liquid.replace(
+            /\{%\s*schema\s*%\}[\s\S]*?\{%\s*endschema\s*%\}/,
+            `{% schema %}\n${JSON.stringify(schemaObj, null, 2)}\n{% endschema %}`
+          )
+        }
+      } catch { /* leave as-is if schema JSON is malformed */ }
     }
 
     return Response.json({ html: liquid })
