@@ -1655,9 +1655,9 @@ textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
 
 .builder-panel-badge {
   font-size: 10px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
+  color: #4ec47a;
+  background: rgba(78,196,122,0.1);
+  border: 1px solid rgba(78,196,122,0.3);
   border-radius: 4px;
   padding: 1px 5px;
   flex-shrink: 0;

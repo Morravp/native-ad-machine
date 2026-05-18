@@ -118,11 +118,11 @@ function SectionCard({
         <div className="section-card-actions">
           <button
             className="btn btn-sm section-card-ai-btn"
-            title="Generate clean standalone HTML with AI"
+            title="Generate Shopify Liquid section with editable schema"
             disabled={aiGenerating}
             onClick={e => { e.stopPropagation(); onCleanHtml(section) }}
           >
-            {aiGenerating && aiTargetId === section.id ? '…' : '✦ Clean'}
+            {aiGenerating && aiTargetId === section.id ? '…' : '✦ Liquid'}
           </button>
           <button className="btn btn-sm" title="Copy raw HTML" onClick={e => { e.stopPropagation(); onCopyRaw(section.id) }}>
             {copyFeedback === section.id ? '✓' : '⎘'}
@@ -473,7 +473,7 @@ export default function CloneEditor() {
   async function generateCleanHtml(section: Section) {
     setAiGenerating(true)
     setSelectedSectionId(section.id)
-    setSectionCodeLabel(`✦ ${section.label}`)
+    setSectionCodeLabel(section.label)
     setSectionCodeHtml('loading')
     setSectionCodeIsClean(false)
     setSectionCodeCleanId(null)
@@ -755,8 +755,8 @@ export default function CloneEditor() {
           <div className="builder-panel">
             <div className="builder-panel-toolbar">
               <span className="builder-panel-label">
-                {sectionCodeIsClean && <span className="builder-panel-badge">✦ Clean</span>}
-                {sectionCodeLabel.replace(/^✦\s*/, '')}
+                {sectionCodeIsClean && <span className="builder-panel-badge">✦ Liquid</span>}
+                {sectionCodeLabel}
               </span>
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 {sectionCodeIsClean && sectionCodeHtml !== 'loading' && (
@@ -773,7 +773,7 @@ export default function CloneEditor() {
                       const blob = new Blob([sectionCodeHtml], { type: 'text/html' })
                       const a = document.createElement('a')
                       a.href = URL.createObjectURL(blob)
-                      a.download = `${sectionCodeLabel.replace(/^✦\s*/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.html`
+                      a.download = `${sectionCodeLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.liquid`
                       a.click()
                     }}>↓</button>
                   </>
@@ -785,7 +785,7 @@ export default function CloneEditor() {
               {sectionCodeHtml === 'loading'
                 ? <div style={{ padding: 20, color: 'var(--text3)', fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
                     <span className="spinner" style={{ width: 14, height: 14 }} />
-                    {sectionCodeIsClean === false ? 'Loading…' : 'Claude is rewriting this section…'}
+                    {sectionCodeIsClean ? 'Claude is generating Liquid…' : 'Loading…'}
                   </div>
                 : <pre>{sectionCodeHtml}</pre>
               }
