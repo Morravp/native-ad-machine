@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 50)}.liquid`
+    .slice(0, 27)}.liquid`
 
   const res = await fetch(
     `https://${row.store_url}/admin/api/2024-01/themes/${row.theme_id}/assets.json`,

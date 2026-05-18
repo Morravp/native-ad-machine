@@ -632,7 +632,7 @@ export default function CloneEditor() {
       const zip = new JSZip()
       const folder = zip.folder('sections')!
       entries.forEach(({ label, liquid }) => {
-        const filename = `cloned-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50)}.liquid`
+        const filename = `cloned-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 36)}.liquid`
         folder.file(filename, liquid)
       })
       zip.file('HOW-TO-INSTALL.txt', [
