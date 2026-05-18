@@ -104,8 +104,8 @@ No markdown fences. No explanation.`
 
   try {
     const message = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 8192,
+      model: 'claude-opus-4-7',
+      max_tokens: 16000,
       messages: [{ role: 'user', content: prompt }],
     })
 
@@ -114,6 +114,16 @@ No markdown fences. No explanation.`
     // Strip any accidental markdown fences
     const fenced = liquid.match(/```(?:liquid|html)?\s*([\s\S]*?)```/)
     if (fenced) liquid = fenced[1].trim()
+
+    // Safety net: if schema was opened but never closed (truncation), close it
+    if (liquid.includes('{% schema %}') && !liquid.includes('{% endschema %}')) {
+      // Try to close any unclosed JSON object before appending the tag
+      const schemaStart = liquid.lastIndexOf('{% schema %}')
+      const schemaBody = liquid.slice(schemaStart + 12)
+      const openBraces = (schemaBody.match(/\{/g) || []).length - (schemaBody.match(/\}/g) || []).length
+      if (openBraces > 0) liquid += '}'.repeat(openBraces)
+      liquid += '\n{% endschema %}'
+    }
 
     return Response.json({ html: liquid })
   } catch (err: any) {
