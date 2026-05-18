@@ -28,19 +28,15 @@ interface Section {
   label: string
 }
 
-interface AiModal {
-  sectionLabel: string
-  sectionId: string
-  loading: boolean
-  result: string
-  error: string
-}
 
 type Viewport = 'desktop' | 'mobile'
 type RightTab = 'sections' | 'element'
 type PendingAction =
   | { action: 'download' | 'copy'; id: string }
   | { action: 'ai'; id: string; resolve: (html: string) => void }
+
+// tracks which section the AI clean result belongs to, for "Apply to Page"
+
 
 const LANGUAGES = [
   { code: 'nl', label: 'Dutch' },
@@ -93,13 +89,14 @@ export default function CloneEditor() {
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null)
   const [sectionCodeHtml, setSectionCodeHtml] = useState<string>('')
   const [sectionCodeLabel, setSectionCodeLabel] = useState('')
+  const [sectionCodeIsClean, setSectionCodeIsClean] = useState(false)
+  const [sectionCodeCleanId, setSectionCodeCleanId] = useState<string | null>(null)
   const [codeCopied, setCodeCopied] = useState(false)
   const [rightTab, setRightTab] = useState<RightTab>('sections')
   const [isDirty, setIsDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleteSection, setDeleteSection] = useState<Section | null>(null)
-  const [aiModal, setAiModal] = useState<AiModal | null>(null)
-  const [aiCopied, setAiCopied] = useState(false)
+  const [aiGenerating, setAiGenerating] = useState(false)
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
 
   const langMenuRef = useRef<HTMLDivElement>(null)
@@ -396,7 +393,14 @@ export default function CloneEditor() {
   }
 
   async function generateCleanHtml(section: Section) {
-    setAiModal({ sectionLabel: section.label, sectionId: section.id, loading: true, result: '', error: '' })
+    setAiGenerating(true)
+    setActiveSectionId(section.id)
+    setSectionCodeLabel(`✦ ${section.label}`)
+    setSectionCodeHtml('loading')
+    setSectionCodeIsClean(false)
+    setSectionCodeCleanId(null)
+    iframeRef.current?.contentWindow?.postMessage({ type: 'HIGHLIGHT_SECTION', id: section.id }, '*')
+
     const sectionHtml = await new Promise<string>(resolve => {
       pendingAction.current = { action: 'ai', id: section.id, resolve }
       iframeRef.current?.contentWindow?.postMessage({ type: 'GET_SECTION_HTML', id: section.id }, '*')
@@ -412,16 +416,21 @@ export default function CloneEditor() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Generation failed')
-      setAiModal(prev => prev ? { ...prev, loading: false, result: data.html } : null)
+      setSectionCodeHtml(data.html)
+      setSectionCodeIsClean(true)
+      setSectionCodeCleanId(section.id)
     } catch (err: any) {
-      setAiModal(prev => prev ? { ...prev, loading: false, error: err.message } : null)
+      setSectionCodeHtml(`/* Error: ${err.message} */`)
+    } finally {
+      setAiGenerating(false)
     }
   }
 
   function applyAiToPage() {
-    if (!aiModal?.result) return
-    iframeRef.current?.contentWindow?.postMessage({ type: 'REPLACE_SECTION', id: aiModal.sectionId, html: aiModal.result }, '*')
-    setAiModal(null)
+    if (!sectionCodeIsClean || !sectionCodeCleanId || !sectionCodeHtml || sectionCodeHtml === 'loading') return
+    iframeRef.current?.contentWindow?.postMessage({ type: 'REPLACE_SECTION', id: sectionCodeCleanId, html: sectionCodeHtml }, '*')
+    setSectionCodeIsClean(false)
+    setSectionCodeCleanId(null)
   }
 
   async function applyEdit() {
@@ -619,7 +628,7 @@ export default function CloneEditor() {
                         <span className="clone-section-tag">{s.tag}</span>
                         <span className="clone-section-label">{s.label}</span>
                         <div className="clone-section-actions">
-                          <button className="btn btn-sm clone-section-ai-btn" title="Generate clean HTML with AI" onClick={e => { e.stopPropagation(); generateCleanHtml(s) }} style={{ padding: '3px 7px', fontSize: 11 }}>✦</button>
+                          <button className="btn btn-sm clone-section-ai-btn" title="Generate clean standalone HTML with AI" disabled={aiGenerating} onClick={e => { e.stopPropagation(); generateCleanHtml(s) }} style={{ padding: '3px 7px', fontSize: 11 }}>{aiGenerating && activeSectionId === s.id ? '…' : '✦'}</button>
                           <button className="btn btn-sm" title="Copy raw HTML" onClick={e => { e.stopPropagation(); requestSectionHtml(s.id, 'copy') }} style={{ padding: '3px 7px', fontSize: 11 }}>{copyFeedback === s.id ? '✓' : '⎘'}</button>
                           <button className="btn btn-sm" title="Download as HTML file" onClick={e => { e.stopPropagation(); requestSectionHtml(s.id, 'download') }} style={{ padding: '3px 7px', fontSize: 11 }}>↓</button>
                           <button className="btn btn-sm" title="Delete section" onClick={e => { e.stopPropagation(); setDeleteSection(s) }} style={{ padding: '3px 7px', fontSize: 11, color: 'var(--red)' }}>✕</button>
@@ -634,23 +643,38 @@ export default function CloneEditor() {
                 <div className="clone-section-code-panel">
                   <div className="clone-section-code-toolbar">
                     <span className="clone-section-code-title">{sectionCodeLabel}</span>
-                    <button
-                      className="btn btn-sm"
-                      style={{ fontSize: 11, padding: '3px 8px' }}
-                      onClick={() => {
-                        navigator.clipboard.writeText(sectionCodeHtml).catch(() => {})
-                        setCodeCopied(true)
-                        setTimeout(() => setCodeCopied(false), 1500)
-                      }}
-                    >
-                      {codeCopied ? '✓ Copied' : '⎘ Copy'}
-                    </button>
-                    <button className="btn btn-sm" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => { if (activeSectionId) requestSectionHtml(activeSectionId, 'download') }}>↓</button>
-                    <button className="clone-section-code-close" onClick={() => { setSectionCodeHtml(''); setActiveSectionId(null); clearSection() }}>✕</button>
+                    <div className="clone-section-code-actions">
+                      {sectionCodeIsClean && sectionCodeHtml !== 'loading' && (
+                        <button className="btn btn-sm btn-accent" style={{ fontSize: 10, padding: '3px 8px' }} onClick={applyAiToPage}>Apply to Page</button>
+                      )}
+                      {sectionCodeHtml !== 'loading' && (
+                        <>
+                          <button
+                            className="btn btn-sm"
+                            style={{ fontSize: 11, padding: '3px 8px' }}
+                            onClick={() => {
+                              navigator.clipboard.writeText(sectionCodeHtml).catch(() => {})
+                              setCodeCopied(true)
+                              setTimeout(() => setCodeCopied(false), 1500)
+                            }}
+                          >
+                            {codeCopied ? '✓' : '⎘'}
+                          </button>
+                          <button className="btn btn-sm" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => {
+                            const blob = new Blob([sectionCodeHtml], { type: 'text/html' })
+                            const a = document.createElement('a')
+                            a.href = URL.createObjectURL(blob)
+                            a.download = `${sectionCodeLabel.replace(/^✦\s*/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.html`
+                            a.click()
+                          }}>↓</button>
+                        </>
+                      )}
+                      <button className="clone-section-code-close" onClick={() => { setSectionCodeHtml(''); setSectionCodeIsClean(false); setSectionCodeCleanId(null); setActiveSectionId(null); clearSection() }}>✕</button>
+                    </div>
                   </div>
                   <div className="clone-section-code-body">
                     {sectionCodeHtml === 'loading'
-                      ? <div style={{ padding: '16px', color: 'var(--text3)', fontSize: 12 }}>Loading…</div>
+                      ? <div style={{ padding: '16px', color: 'var(--text3)', fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}><span className="spinner" style={{ width: 14, height: 14 }} />Claude is rewriting this section…</div>
                       : <pre>{sectionCodeHtml}</pre>
                     }
                   </div>
@@ -689,33 +713,6 @@ export default function CloneEditor() {
         </div>
       </div>
 
-      {aiModal && (
-        <div className="modal-backdrop" onClick={() => !aiModal.loading && setAiModal(null)}>
-          <div className="ai-section-modal" onClick={e => e.stopPropagation()}>
-            <div className="ai-section-modal-header">
-              <div>
-                <div className="ai-section-modal-title">✦ AI Clean HTML</div>
-                <div className="ai-section-modal-sub">{aiModal.sectionLabel}</div>
-              </div>
-              {!aiModal.loading && <button className="modal-close" onClick={() => setAiModal(null)}>✕</button>}
-            </div>
-            {aiModal.loading ? (
-              <div className="ai-section-loading"><span className="spinner" /><span>Claude is analyzing and rewriting this section…</span></div>
-            ) : aiModal.error ? (
-              <div className="ai-section-error">{aiModal.error}</div>
-            ) : (
-              <>
-                <div className="ai-section-code"><pre>{aiModal.result}</pre></div>
-                <div className="ai-section-actions">
-                  <button className="btn btn-sm" onClick={() => { navigator.clipboard.writeText(aiModal.result); setAiCopied(true); setTimeout(() => setAiCopied(false), 1500) }}>{aiCopied ? '✓ Copied' : '⎘ Copy HTML'}</button>
-                  <button className="btn btn-sm" onClick={() => { const blob = new Blob([aiModal.result], { type: 'text/html' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${aiModal.sectionLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}-clean.html`; a.click() }}>↓ Download</button>
-                  <button className="btn btn-sm btn-accent" onClick={applyAiToPage}>Apply to Page</button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
 
       <ConfirmModal
         open={!!deleteSection}
