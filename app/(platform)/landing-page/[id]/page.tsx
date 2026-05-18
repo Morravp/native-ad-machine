@@ -102,6 +102,7 @@ export default function CloneEditor() {
   const sectionsRef = useRef(sections)
   const pendingAction = useRef<{ action: 'download' | 'copy'; index: number } | null>(null)
   const fullHtmlResolve = useRef<((h: string) => void) | null>(null)
+  const savedHtmlRef = useRef('')
 
   useEffect(() => { htmlRef.current = html }, [html])
   useEffect(() => { sectionsRef.current = sections }, [sections])
@@ -112,6 +113,7 @@ export default function CloneEditor() {
       .then(data => {
         setClone(data)
         setHtml(data.html)
+        savedHtmlRef.current = data.html
         setLoading(false)
       })
   }, [id])
@@ -311,7 +313,7 @@ export default function CloneEditor() {
     iframeRef.current?.contentWindow?.postMessage({ type: 'GET_SECTION_HTML', index }, '*')
   }
 
-  function applyEdit() {
+  async function applyEdit() {
     if (!selected || !iframeRef.current?.contentWindow) return
     if (selected.tag === 'IMG') {
       iframeRef.current.contentWindow.postMessage({ type: 'UPDATE_IMAGE', src: editSrc, alt: editText }, '*')
@@ -320,10 +322,13 @@ export default function CloneEditor() {
       iframeRef.current.contentWindow.postMessage({ type: 'UPDATE_ELEMENT', text: editText }, '*')
       setSelected(prev => prev ? { ...prev, text: editText } : null)
     }
+    // Brief delay so the iframe DOM updates before we snapshot it
+    await new Promise(r => setTimeout(r, 80))
+    await saveToDb(true)
   }
 
-  async function saveToDb() {
-    setSaving(true)
+  async function saveToDb(auto = false) {
+    if (!auto) setSaving(true)
     const liveHtml = await new Promise<string>(resolve => {
       fullHtmlResolve.current = resolve
       iframeRef.current?.contentWindow?.postMessage({ type: 'GET_FULL_HTML' }, '*')
@@ -335,17 +340,19 @@ export default function CloneEditor() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ html: liveHtml }),
       })
+      savedHtmlRef.current = liveHtml
       setIsDirty(false)
     } catch {
-      alert('Save failed. Please try again.')
+      if (!auto) alert('Save failed. Please try again.')
     } finally {
-      setSaving(false)
+      if (!auto) setSaving(false)
     }
   }
 
-  function downloadHtml() {
-    if (!html) return
-    const blob = new Blob([html], { type: 'text/html' })
+  async function downloadHtml() {
+    const content = savedHtmlRef.current || htmlRef.current
+    if (!content) return
+    const blob = new Blob([content], { type: 'text/html' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = `${clone?.title || 'clone'}.html`
@@ -450,7 +457,7 @@ export default function CloneEditor() {
           </button>
 
           {isDirty && (
-            <button className="btn btn-sm btn-accent" onClick={saveToDb} disabled={saving}>
+            <button className="btn btn-sm btn-accent" onClick={() => saveToDb()} disabled={saving}>
               {saving ? '…' : '↑ Save'}
             </button>
           )}
@@ -611,9 +618,11 @@ export default function CloneEditor() {
                     </div>
                   )}
 
-                  <button className="btn btn-accent" onClick={applyEdit}>Apply Change</button>
+                  <button className="btn btn-accent" onClick={applyEdit} disabled={saving}>
+                    {saving ? '…' : 'Apply & Save'}
+                  </button>
                   <div className="notice-box">
-                    Changes are live in preview. Hit <strong style={{ color: 'var(--text2)' }}>↑ Save</strong> to persist, or download to export.
+                    Applies the change live and saves automatically. Download HTML to export.
                   </div>
                 </div>
               )}
