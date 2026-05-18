@@ -19,7 +19,14 @@ interface SelectedElement {
   html: string
 }
 
+interface Section {
+  index: number
+  tag: string
+  label: string
+}
+
 type Viewport = 'desktop' | 'mobile'
+type RightTab = 'sections' | 'element'
 
 const LANGUAGES = [
   { code: 'nl', label: 'Dutch' },
@@ -35,14 +42,12 @@ const LANGUAGES = [
 ]
 
 function scopeHtmlForShopify(html: string, scopeClass: string): string {
-  // Extract all <style> blocks
   const styles: string[] = []
   const htmlNoStyles = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_, css) => {
     styles.push(css)
     return ''
   })
 
-  // Scope every CSS rule with the wrapper class
   const scopedCss = styles.map(css =>
     css.replace(/([^{}]+)\{/g, (match, selectors) => {
       const scoped = selectors
@@ -60,7 +65,6 @@ function scopeHtmlForShopify(html: string, scopeClass: string): string {
     })
   ).join('\n')
 
-  // Extract <body> content
   const bodyMatch = htmlNoStyles.match(/<body[^>]*>([\s\S]*?)<\/body>/i)
   const bodyContent = bodyMatch ? bodyMatch[1] : htmlNoStyles
 
@@ -87,7 +91,18 @@ export default function CloneEditor() {
   const [translating, setTranslating] = useState(false)
   const [translateProgress, setTranslateProgress] = useState(0)
   const [showLangMenu, setShowLangMenu] = useState(false)
+  const [sections, setSections] = useState<Section[]>([])
+  const [selectedSectionIdx, setSelectedSectionIdx] = useState<number | null>(null)
+  const [rightTab, setRightTab] = useState<RightTab>('sections')
+  const [copyFeedback, setCopyFeedback] = useState<number | null>(null)
+
   const langMenuRef = useRef<HTMLDivElement>(null)
+  const htmlRef = useRef(html)
+  const sectionsRef = useRef(sections)
+  const pendingAction = useRef<{ action: 'download' | 'copy'; index: number } | null>(null)
+
+  useEffect(() => { htmlRef.current = html }, [html])
+  useEffect(() => { sectionsRef.current = sections }, [sections])
 
   useEffect(() => {
     fetch(`/api/cloned-pages/${id}`)
@@ -101,9 +116,34 @@ export default function CloneEditor() {
 
   useEffect(() => {
     function handleMessage(e: MessageEvent) {
-      if (e.data?.type === 'ELEMENT_SELECTED') {
+      if (e.data?.type === 'SECTIONS_LOADED') {
+        setSections(e.data.sections)
+        setSelectedSectionIdx(null)
+      } else if (e.data?.type === 'ELEMENT_SELECTED') {
         setSelected(e.data)
         setEditText(e.data.text)
+        setRightTab('element')
+      } else if (e.data?.type === 'SECTION_HTML') {
+        const pa = pendingAction.current
+        if (!pa) return
+        pendingAction.current = null
+        const currentSections = sectionsRef.current
+        const section = currentSections.find(s => s.index === e.data.index)
+        const label = section?.label || `section-${e.data.index + 1}`
+        if (pa.action === 'copy') {
+          navigator.clipboard.writeText(e.data.outerHtml).catch(() => {})
+          setCopyFeedback(e.data.index)
+          setTimeout(() => setCopyFeedback(null), 1500)
+        } else {
+          const styleMatches = htmlRef.current.match(/<style[^>]*>[\s\S]*?<\/style>/gi) ?? []
+          const styleBlocks = styleMatches.join('\n')
+          const fullHtml = `<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n${styleBlocks}\n</head>\n<body>\n${e.data.outerHtml}\n</body>\n</html>`
+          const blob = new Blob([fullHtml], { type: 'text/html' })
+          const a = document.createElement('a')
+          a.href = URL.createObjectURL(blob)
+          a.download = `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}.html`
+          a.click()
+        }
       }
     }
     window.addEventListener('message', handleMessage)
@@ -120,20 +160,77 @@ export default function CloneEditor() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  function injectEditScript(rawHtml: string, editModeOn: boolean): string {
-    const script = editModeOn ? `
+  function injectScript(rawHtml: string, editModeOn: boolean): string {
+    const script = `
 <script>
 (function() {
-  var selected = null;
+  var selectedEl = null;
+  var activeSectionEl = null;
+
+  function scanSections() {
+    var children = Array.from(document.body.children);
+    var sections = children.map(function(el, i) {
+      var firstH = el.querySelector('h1,h2,h3,h4,h5,h6');
+      var label = (firstH && firstH.textContent && firstH.textContent.trim()) || (el.tagName.toLowerCase() + ' ' + (i + 1));
+      return { index: i, tag: el.tagName.toLowerCase(), label: label.slice(0, 60) };
+    });
+    window.parent.postMessage({ type: 'SECTIONS_LOADED', sections: sections }, '*');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scanSections);
+  } else {
+    scanSections();
+  }
+
+  window.addEventListener('message', function(e) {
+    if (!e.data) return;
+
+    if (e.data.type === 'HIGHLIGHT_SECTION') {
+      if (activeSectionEl) {
+        activeSectionEl.style.outline = '';
+        activeSectionEl.style.outlineOffset = '';
+      }
+      var children = Array.from(document.body.children);
+      activeSectionEl = children[e.data.index] || null;
+      if (activeSectionEl) {
+        activeSectionEl.style.outline = '2px solid #e8c547';
+        activeSectionEl.style.outlineOffset = '4px';
+        if (e.data.scroll) activeSectionEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+
+    if (e.data.type === 'CLEAR_SECTION') {
+      if (activeSectionEl) {
+        activeSectionEl.style.outline = '';
+        activeSectionEl.style.outlineOffset = '';
+        activeSectionEl = null;
+      }
+    }
+
+    if (e.data.type === 'GET_SECTION_HTML') {
+      var children = Array.from(document.body.children);
+      var el = children[e.data.index];
+      if (el) {
+        window.parent.postMessage({ type: 'SECTION_HTML', index: e.data.index, outerHtml: el.outerHTML }, '*');
+      }
+    }
+
+    if (e.data.type === 'UPDATE_ELEMENT' && selectedEl) {
+      selectedEl.textContent = e.data.text;
+    }
+  });
+
+  ${editModeOn ? `
   document.addEventListener('click', function(e) {
     e.preventDefault();
     e.stopPropagation();
-    if (selected) selected.style.outline = '';
-    selected = e.target;
-    selected.style.outline = '2px solid #e8c547';
-    selected.style.outlineOffset = '2px';
+    if (selectedEl) selectedEl.style.outline = '';
+    selectedEl = e.target;
+    selectedEl.style.outline = '2px solid #e8c547';
+    selectedEl.style.outlineOffset = '2px';
     var path = [];
-    var el = selected;
+    var el = selectedEl;
     while (el && el !== document.body) {
       var idx = Array.from(el.parentNode ? el.parentNode.children : []).indexOf(el);
       path.unshift(el.tagName.toLowerCase() + ':nth-child(' + (idx + 1) + ')');
@@ -141,24 +238,35 @@ export default function CloneEditor() {
     }
     window.parent.postMessage({
       type: 'ELEMENT_SELECTED',
-      tag: selected.tagName,
-      text: selected.innerText || selected.textContent || '',
-      html: selected.innerHTML || '',
+      tag: selectedEl.tagName,
+      text: selectedEl.innerText || selectedEl.textContent || '',
+      html: selectedEl.innerHTML || '',
       path: path.join(' > ')
     }, '*');
   }, true);
-  window.addEventListener('message', function(e) {
-    if (e.data && e.data.type === 'UPDATE_ELEMENT' && selected) {
-      selected.textContent = e.data.text;
-    }
-  });
+  ` : ''}
 })();
-<\/script>` : ''
+<\/script>`
 
     if (rawHtml.includes('</body>')) {
       return rawHtml.replace('</body>', script + '</body>')
     }
     return rawHtml + script
+  }
+
+  function highlightSection(index: number, scroll = false) {
+    setSelectedSectionIdx(index)
+    iframeRef.current?.contentWindow?.postMessage({ type: 'HIGHLIGHT_SECTION', index, scroll }, '*')
+  }
+
+  function clearSection() {
+    setSelectedSectionIdx(null)
+    iframeRef.current?.contentWindow?.postMessage({ type: 'CLEAR_SECTION' }, '*')
+  }
+
+  function requestSectionHtml(index: number, action: 'download' | 'copy') {
+    pendingAction.current = { action, index }
+    iframeRef.current?.contentWindow?.postMessage({ type: 'GET_SECTION_HTML', index }, '*')
   }
 
   function applyEdit() {
@@ -229,7 +337,6 @@ export default function CloneEditor() {
     } catch (err: any) {
       alert(err.message)
     } finally {
-      // brief pause so the bar visually completes before disappearing
       setTimeout(() => { setTranslating(false); setTranslateProgress(0) }, 600)
     }
   }
@@ -254,7 +361,7 @@ export default function CloneEditor() {
     )
   }
 
-  const iframeSrc = injectEditScript(html, editMode)
+  const iframeSrc = injectScript(html, editMode)
 
   return (
     <>
@@ -271,7 +378,6 @@ export default function CloneEditor() {
         </div>
         <div className="topbar-actions">
 
-          {/* Viewport toggle */}
           <div className="viewport-toggle">
             <button
               className={`viewport-btn${viewport === 'desktop' ? ' active' : ''}`}
@@ -289,7 +395,6 @@ export default function CloneEditor() {
             </button>
           </div>
 
-          {/* Edit mode */}
           <button
             className={`btn btn-sm${editMode ? ' btn-accent' : ''}`}
             onClick={() => { setEditMode(!editMode); setSelected(null) }}
@@ -297,7 +402,6 @@ export default function CloneEditor() {
             {editMode ? '✓ Editing' : '✎ Edit'}
           </button>
 
-          {/* Translate */}
           <div style={{ position: 'relative' }} ref={langMenuRef}>
             <button
               className="btn btn-sm"
@@ -305,8 +409,8 @@ export default function CloneEditor() {
               disabled={translating}
             >
               {translating
-              ? `Translating… ${Math.round(translateProgress * 100)}%`
-              : '🌐 Translate'}
+                ? `Translating… ${Math.round(translateProgress * 100)}%`
+                : '🌐 Translate'}
             </button>
             {showLangMenu && (
               <div className="lang-menu">
@@ -323,7 +427,6 @@ export default function CloneEditor() {
             )}
           </div>
 
-          {/* Download */}
           <div style={{ position: 'relative' }} className="download-group">
             <button className="btn btn-sm" onClick={downloadHtml}>↓ HTML</button>
             <button className="btn btn-sm btn-accent" onClick={downloadShopify} title="Scoped .liquid section — works with every Shopify theme">
@@ -363,41 +466,107 @@ export default function CloneEditor() {
         </div>
 
         <div className="clone-edit-pane">
-          <div className="clone-edit-header">
-            <div className="clone-edit-title">Element Editor</div>
-            <div className="clone-edit-hint">
-              {editMode
-                ? 'Click any element in the preview to select and edit it.'
-                : 'Enable Edit Mode to select and modify page elements.'}
-            </div>
+          <div className="clone-edit-tabs">
+            <button
+              className={`clone-edit-tab${rightTab === 'sections' ? ' active' : ''}`}
+              onClick={() => setRightTab('sections')}
+            >
+              Sections {sections.length > 0 && <span className="clone-tab-count">{sections.length}</span>}
+            </button>
+            <button
+              className={`clone-edit-tab${rightTab === 'element' ? ' active' : ''}`}
+              onClick={() => setRightTab('element')}
+            >
+              Element
+            </button>
           </div>
 
-          {!editMode ? (
-            <div className="clone-edit-empty">
-              <span style={{ fontSize: 32, opacity: 0.2 }}>✎</span>
-              Enable Edit Mode to<br />interact with the page.
-            </div>
-          ) : !selected ? (
-            <div className="clone-edit-empty">
-              <span style={{ fontSize: 32, opacity: 0.2 }}>◎</span>
-              Click any element<br />in the preview to edit it.
+          {rightTab === 'sections' ? (
+            <div className="clone-sections-list">
+              {sections.length === 0 ? (
+                <div className="clone-edit-empty">
+                  <span style={{ fontSize: 28, opacity: 0.2 }}>◫</span>
+                  Loading sections…
+                </div>
+              ) : (
+                <>
+                  {selectedSectionIdx !== null && (
+                    <button
+                      className="clone-section-clear"
+                      onClick={clearSection}
+                    >
+                      ✕ Clear highlight
+                    </button>
+                  )}
+                  {sections.map(s => (
+                    <div
+                      key={s.index}
+                      className={`clone-section-item${selectedSectionIdx === s.index ? ' active' : ''}`}
+                      onClick={() => highlightSection(s.index, true)}
+                    >
+                      <span className="clone-section-tag">{s.tag}</span>
+                      <span className="clone-section-label">{s.label}</span>
+                      <div className="clone-section-actions">
+                        <button
+                          className="btn btn-sm"
+                          title="Copy HTML"
+                          onClick={e => { e.stopPropagation(); requestSectionHtml(s.index, 'copy') }}
+                          style={{ padding: '3px 7px', fontSize: 11 }}
+                        >
+                          {copyFeedback === s.index ? '✓' : '⎘'}
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          title="Download as standalone HTML"
+                          onClick={e => { e.stopPropagation(); requestSectionHtml(s.index, 'download') }}
+                          style={{ padding: '3px 7px', fontSize: 11 }}
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           ) : (
-            <div className="clone-edit-selection">
-              <div><span className="clone-edit-tag">{selected.tag}</span></div>
-              <div className="clone-edit-field">
-                <label className="field-label">Text content</label>
-                <textarea
-                  value={editText}
-                  onChange={e => setEditText(e.target.value)}
-                  rows={5}
-                />
+            <>
+              <div className="clone-edit-header">
+                <div className="clone-edit-hint">
+                  {editMode
+                    ? 'Click any element in the preview to select and edit it.'
+                    : 'Enable Edit Mode to select and modify page elements.'}
+                </div>
               </div>
-              <button className="btn btn-accent" onClick={applyEdit}>Apply Change</button>
-              <div className="notice-box">
-                Changes are live in the preview. Download HTML or Shopify to save.
-              </div>
-            </div>
+
+              {!editMode ? (
+                <div className="clone-edit-empty">
+                  <span style={{ fontSize: 32, opacity: 0.2 }}>✎</span>
+                  Enable Edit Mode to<br />interact with the page.
+                </div>
+              ) : !selected ? (
+                <div className="clone-edit-empty">
+                  <span style={{ fontSize: 32, opacity: 0.2 }}>◎</span>
+                  Click any element<br />in the preview to edit it.
+                </div>
+              ) : (
+                <div className="clone-edit-selection">
+                  <div><span className="clone-edit-tag">{selected.tag}</span></div>
+                  <div className="clone-edit-field">
+                    <label className="field-label">Text content</label>
+                    <textarea
+                      value={editText}
+                      onChange={e => setEditText(e.target.value)}
+                      rows={5}
+                    />
+                  </div>
+                  <button className="btn btn-accent" onClick={applyEdit}>Apply Change</button>
+                  <div className="notice-box">
+                    Changes are live in the preview. Download HTML or Shopify to save.
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
