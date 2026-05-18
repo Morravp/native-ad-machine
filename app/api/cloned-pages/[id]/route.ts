@@ -8,6 +8,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json(row)
 }
 
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const { html } = await req.json()
+  if (typeof html !== 'string') return NextResponse.json({ error: 'html required' }, { status: 400 })
+  await sql`UPDATE cloned_pages SET html = ${html} WHERE id = ${id}`
+  return NextResponse.json({ ok: true })
+}
+
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   await sql`DELETE FROM cloned_pages WHERE id = ${id}`

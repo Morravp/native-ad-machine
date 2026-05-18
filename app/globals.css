@@ -149,6 +149,20 @@ body {
 
 .topbar-actions { display: flex; gap: 10px; align-items: center; }
 
+.unsaved-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 /* ── BUTTONS ── */
 .btn {
   display: inline-flex;
