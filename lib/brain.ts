@@ -73,5 +73,6 @@ export async function retrieveRelevantChunks(
     ORDER BY embedding <=> ${vectorStr}::vector
     LIMIT ${topK}
   `
-  return rows.map((r: { content: string }) => r.content)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return rows.map((r: any) => r.content as string)
 }
