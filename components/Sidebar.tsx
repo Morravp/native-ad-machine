@@ -52,6 +52,11 @@ export default function Sidebar() {
             <span className="nav-icon">◈</span> Boards
           </Link>
 
+          <div className="nav-section-label">Intelligence</div>
+          <Link href="/brain" className={navClass('/brain')}>
+            <span className="nav-icon">🧠</span> Marketing Brain
+          </Link>
+
           <div className="nav-section-label">Settings</div>
           <Link href="/rules" className={navClass('/rules')}>
             <span className="nav-icon">◎</span> Global Rules

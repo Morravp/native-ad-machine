@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import sql from '@/lib/db'
 import { NextRequest } from 'next/server'
+import { retrieveRelevantChunks } from '@/lib/brain'
 
 export const maxDuration = 300 // 5 minutes
 
@@ -56,17 +57,31 @@ export async function POST(req: NextRequest) {
     ? `\nEXTRA DOCS FOR THIS AD:\n${(extra_doc_texts as string[]).join('\n\n')}`
     : ''
 
+  // Retrieve relevant knowledge from the Marketing Brain
+  const brainQuery = [
+    brand.name,
+    country,
+    extra_context ?? '',
+    competitor_ad ? competitor_ad.slice(0, 300) : '',
+  ].filter(Boolean).join(' ')
+
+  const brainChunks = await retrieveRelevantChunks(brainQuery, 6).catch(() => [] as string[])
+  const brainSection = brainChunks.length
+    ? `\nMARKETING KNOWLEDGE BASE (expert e-commerce & direct response knowledge — apply where relevant):\n${brainChunks.map((c, i) => `[${i + 1}] ${c}`).join('\n\n')}`
+    : ''
+
   const prompt = `You are an expert native ad copywriter specialising in advertorial-style content.
 
 AD ID: ${ad_id}
 BRAND: ${brand.name}
 TARGET MARKET: ${country}
 BADGE NUMBER: ${badge_number}
-${rulesText}${brandRulesText}${productSection}${personaSection}${competitorSection}${extraContextSection}${extraDocsSection}
+${rulesText}${brandRulesText}${productSection}${personaSection}${competitorSection}${extraContextSection}${extraDocsSection}${brainSection}
 
 Write a compelling advertorial-style native ad for ${brand.name} targeting ${country}.
 Follow ALL copywriting rules strictly.
 If a format reference is provided, mirror its structure and flow — write entirely original content based only on the brand and product docs above.
+Apply relevant principles from the Marketing Knowledge Base to strengthen the copy.
 Start the ad directly. At the very top of the output, include the Ad ID: ${ad_id}
 End with a strong, clear call to action.`
 

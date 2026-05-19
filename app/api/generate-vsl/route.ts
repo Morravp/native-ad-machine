@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import sql from '@/lib/db'
 import { NextRequest } from 'next/server'
+import { retrieveRelevantChunks } from '@/lib/brain'
 
 export const maxDuration = 300 // 5 minutes
 
@@ -56,17 +57,30 @@ export async function POST(req: NextRequest) {
     ? `\nEXTRA DOCS:\n${(extra_doc_texts as string[]).join('\n\n')}`
     : ''
 
+  // Retrieve relevant knowledge from the Marketing Brain
+  const brainQuery = [
+    brand.name,
+    country,
+    extra_context ?? '',
+  ].filter(Boolean).join(' ')
+
+  const brainChunks = await retrieveRelevantChunks(brainQuery, 6).catch(() => [] as string[])
+  const brainSection = brainChunks.length
+    ? `\nMARKETING KNOWLEDGE BASE (expert e-commerce & direct response knowledge — apply where relevant):\n${brainChunks.map((c, i) => `[${i + 1}] ${c}`).join('\n\n')}`
+    : ''
+
   const prompt = `You are an expert direct-response copywriter specialising in Video Sales Letter (VSL) scripts.
 
 SCRIPT ID: ${ad_id}
 BRAND: ${brand.name}
 TARGET MARKET: ${country}
-${rulesText}${brandRulesText}${productSection}${personaSection}${formatSection}${extraContextSection}${extraDocsSection}
+${rulesText}${brandRulesText}${productSection}${personaSection}${formatSection}${extraContextSection}${extraDocsSection}${brainSection}
 
 Write a complete, compelling VSL script for ${brand.name} targeting ${country}.
 Structure the script with clear sections: Hook, Problem, Agitation, Solution, Product Introduction, Benefits, Social Proof, Offer, and Call to Action.
 Follow ALL rules strictly.
 If a format reference is provided, mirror its structure — write entirely original content based only on the brand and product docs.
+Apply relevant principles from the Marketing Knowledge Base to strengthen the script.
 Write in a conversational, spoken tone as if being read aloud on camera.
 At the very top, include the Script ID: ${ad_id}
 End with a strong, urgent call to action.`
