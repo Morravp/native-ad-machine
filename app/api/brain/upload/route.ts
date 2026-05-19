@@ -18,14 +18,19 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: `Text extraction failed: ${err.message}` }, { status: 422 })
   }
 
-  if (!text || text.length < 50) {
-    return Response.json({ error: 'Could not extract readable text from this file' }, { status: 422 })
+  // Detect silent extraction failure (pdf-parse returns an error string for scanned/encrypted PDFs)
+  if (!text || text.length < 100 || text.startsWith('[Could not')) {
+    return Response.json({
+      error: 'Could not extract text from this PDF. It may be a scanned image or encrypted. Please export it as a text-based PDF, or copy-paste the content into a .txt file and upload that instead.',
+    }, { status: 422 })
   }
 
   // 2. Chunk
   const chunks = chunkText(text)
   if (chunks.length === 0) {
-    return Response.json({ error: 'Document produced no usable chunks' }, { status: 422 })
+    return Response.json({
+      error: 'This file appears to be a scanned PDF (no selectable text). Please convert it to a text-based PDF or paste the content into a .txt file.',
+    }, { status: 422 })
   }
 
   // 3. Embed all chunks
