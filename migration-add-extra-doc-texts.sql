@@ -1,0 +1,1 @@
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS extra_doc_texts JSONB DEFAULT '[]';

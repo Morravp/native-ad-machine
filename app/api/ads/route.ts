@@ -14,10 +14,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const body = await req.json()
   const [row] = await sql`
-    INSERT INTO ads (ad_id, brand_id, country, badge_number, body, competitor_ad, extra_context)
+    INSERT INTO ads (ad_id, brand_id, country, badge_number, body, competitor_ad, extra_context, extra_doc_texts)
     VALUES (
       ${body.ad_id}, ${body.brand_id}, ${body.country}, ${body.badge_number},
-      ${body.body}, ${body.competitor_ad ?? null}, ${body.extra_context ?? null}
+      ${body.body}, ${body.competitor_ad ?? null}, ${body.extra_context ?? null},
+      ${sql.json(body.extra_doc_texts ?? [])}
     )
     RETURNING *
   `

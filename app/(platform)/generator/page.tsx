@@ -32,6 +32,7 @@ function GeneratorInner() {
   const [output, setOutput] = useState('')
   const [outputAdId, setOutputAdId] = useState('')
   const [saved, setSaved] = useState(false)
+  const [lastExtraDocTexts, setLastExtraDocTexts] = useState<string[]>([])
   const outputRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -76,6 +77,7 @@ function GeneratorInner() {
     if (extraFiles.length) {
       extraDocTexts = await extractExtraDocs()
     }
+    setLastExtraDocTexts(extraDocTexts)
 
     const res = await fetch('/api/generate', {
       method: 'POST',
@@ -137,6 +139,7 @@ function GeneratorInner() {
         body: output,
         competitor_ad: competitor || null,
         extra_context: extraContext || null,
+        extra_doc_texts: lastExtraDocTexts.length ? lastExtraDocTexts : [],
       }),
     })
     setSaved(true)

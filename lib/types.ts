@@ -41,6 +41,7 @@ export interface Ad {
   body: string
   competitor_ad: string | null
   extra_context: string | null
+  extra_doc_texts: string[] | null
   created_at: string
   brand_name?: string
 }
