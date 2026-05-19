@@ -72,7 +72,7 @@ End with a strong, clear call to action.`
   try {
     stream = await anthropic.messages.stream({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
+      max_tokens: 8192,
       messages: [{ role: 'user', content: prompt }],
     })
   } catch (err: any) {
