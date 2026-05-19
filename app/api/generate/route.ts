@@ -2,6 +2,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import sql from '@/lib/db'
 import { NextRequest } from 'next/server'
 
+export const maxDuration = 300 // 5 minutes
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(req: NextRequest) {
@@ -86,6 +88,12 @@ End with a strong, clear call to action.`
   const encoder = new TextEncoder()
   const readable = new ReadableStream({
     async start(controller) {
+      // Send a keepalive comment every 15s to prevent Railway/proxy from
+      // dropping the SSE connection during slow token generation
+      const keepalive = setInterval(() => {
+        try { controller.enqueue(encoder.encode(': keepalive\n\n')) } catch {}
+      }, 15000)
+
       try {
         for await (const event of stream) {
           if (
@@ -103,6 +111,7 @@ End with a strong, clear call to action.`
           encoder.encode(`data: ${JSON.stringify({ error: err?.message ?? 'Stream error' })}\n\n`)
         )
       }
+      clearInterval(keepalive)
       controller.enqueue(encoder.encode('data: [DONE]\n\n'))
       controller.close()
     },
