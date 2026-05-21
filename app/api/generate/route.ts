@@ -9,8 +9,10 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 const SSE_HEADERS = {
   'Content-Type': 'text/event-stream',
-  'Cache-Control': 'no-cache',
+  'Cache-Control': 'no-cache, no-transform',
   'Connection': 'keep-alive',
+  'X-Accel-Buffering': 'no',   // disable nginx proxy buffering (Railway)
+  'Transfer-Encoding': 'chunked',
 }
 
 export async function POST(req: NextRequest) {
@@ -67,8 +69,8 @@ export async function POST(req: NextRequest) {
         try { controller.enqueue(encoder.encode(data)) } catch {}
       }
 
-      // Keepalive every 5s — keeps Railway's proxy from dropping the connection
-      const keepalive = setInterval(() => send(': keepalive\n\n'), 5000)
+      // Keepalive every 5s as a real data event (nginx ignores SSE comments)
+      const keepalive = setInterval(() => send('data: {"keepalive":true}\n\n'), 5000)
 
       try {
         // 1. Retrieve brain knowledge (runs while keepalive is active)

@@ -9,8 +9,10 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 const SSE_HEADERS = {
   'Content-Type': 'text/event-stream',
-  'Cache-Control': 'no-cache',
+  'Cache-Control': 'no-cache, no-transform',
   'Connection': 'keep-alive',
+  'X-Accel-Buffering': 'no',   // disable nginx proxy buffering (Railway)
+  'Transfer-Encoding': 'chunked',
 }
 
 export async function POST(req: NextRequest) {
@@ -65,7 +67,7 @@ export async function POST(req: NextRequest) {
         try { controller.enqueue(encoder.encode(data)) } catch {}
       }
 
-      const keepalive = setInterval(() => send(': keepalive\n\n'), 5000)
+      const keepalive = setInterval(() => send('data: {"keepalive":true}\n\n'), 5000)
 
       try {
         // 1. Brain retrieval while keepalive is running

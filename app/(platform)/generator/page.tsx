@@ -112,7 +112,10 @@ function GeneratorInner() {
         const payload = line.slice(6)
         if (payload === '[DONE]') continue
         try {
-          const { text } = JSON.parse(payload)
+          const parsed = JSON.parse(payload)
+          if (parsed.keepalive) continue
+          const { text } = parsed
+          if (!text) continue
           full += text
           setOutput(full)
           if (outputRef.current) {
